@@ -37,7 +37,8 @@ app/
   error.vue           # 404 / 错误页
 tests/                # Vitest 单元测试
 nginx/                # nginx 站点配置示例
-scripts/deploy.sh     # rsync 发布脚本（需要本机有 rsync，Windows 下用 README 里的 scp 命令）
+deploy.ps1            # Windows 一键发布脚本（检查 → 打包 → 上传）
+scripts/deploy.sh     # rsync 发布脚本（需要本机有 rsync）
 ```
 
 ### 新增一个工具
@@ -119,6 +120,16 @@ npx serve .output/public
 5. **ICP 备案号**：把 `app/config/site.ts` 里的 `icp` 占位符改成真实备案号（子域名沿用主域名备案），页脚会链接到 <https://beian.miit.gov.cn>。
 
 ### 二、发布（每次更新都执行）
+
+在项目根目录的 PowerShell 里执行一条命令，就能完成检查、打包、上传：
+
+```powershell
+.\deploy.ps1
+```
+
+脚本依次执行 `pnpm lint`、`pnpm test`、`pnpm generate`，再把 `.output/public` 上传到服务器的临时目录，整体替换 `/var/www/tools`。任一步失败都会停止，不会动线上文件。只改了文案之类的小改动时，可以用 `.\deploy.ps1 -SkipCheck` 跳过 lint 和 test。
+
+不用脚本时，等价的手动命令如下：
 
 ```bash
 pnpm generate
