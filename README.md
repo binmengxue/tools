@@ -37,7 +37,7 @@ app/
   error.vue           # 404 / 错误页
 tests/                # Vitest 单元测试
 nginx/                # nginx 站点配置示例
-scripts/deploy.sh     # rsync 发布脚本
+scripts/deploy.sh     # rsync 发布脚本（需要本机有 rsync，Windows 下用 README 里的 scp 命令）
 ```
 
 ### 新增一个工具
@@ -90,53 +90,63 @@ npx serve .output/public
 
 ## 部署
 
-服务器上只放静态文件，不在服务器上构建。
+服务器上只放静态文件，不在服务器上构建。做法和 sheyinglai.top 一致：本机用 `scp` + `ssh` 以 root 登录服务器（需先配置好 SSH 免密登录），HTTPS 使用阿里云免费证书。以下命令都在本机项目根目录执行，PowerShell 和 Git Bash 都可以。
 
-### 一、服务器初始化（只需做一次，需手动操作）
+### 一、服务器初始化（只需做一次）
 
-1. **DNS 解析**：在阿里云域名解析中为 `sheyinglai.top` 添加一条记录：
-   - 记录类型 `A`，主机记录 `tools`，记录值 `106.14.171.234`
-2. **创建站点目录**：
+1. **DNS 解析**：阿里云云解析 DNS → `sheyinglai.top` → 添加记录：记录类型 `A`，主机记录 `tools`，记录值 `106.14.171.234`。生效后可用 `nslookup tools.sheyinglai.top` 验证。
 
-   ```bash
-   sudo mkdir -p /var/www/tools && sudo chown -R $USER:$USER /var/www/tools
-   ```
+2. **申请证书**：阿里云「数字证书管理服务」→ SSL 证书 → 免费证书，为 `tools.sheyinglai.top` 申请一张（免费证书只覆盖单个域名，主域名那张不能用）。签发后下载 **Nginx** 格式，把两个文件重命名为 `tools.sheyinglai.top.pem` 和 `tools.sheyinglai.top.key`。
 
-3. **启用 nginx 站点**：把仓库里的 [nginx/tools.sheyinglai.top.conf](nginx/tools.sheyinglai.top.conf) 上传到服务器的 `/etc/nginx/sites-available/tools.sheyinglai.top`，然后：
+3. **上传证书**（在证书文件所在目录执行）：
 
    ```bash
-   sudo ln -s /etc/nginx/sites-available/tools.sheyinglai.top /etc/nginx/sites-enabled/
+   scp tools.sheyinglai.top.pem tools.sheyinglai.top.key root@106.14.171.234:/etc/nginx/cert/
+   ```
+
+4. **启用 nginx 站点**：上传 [nginx/tools.sheyinglai.top.conf](nginx/tools.sheyinglai.top.conf)（已包含 80 → 443 跳转和证书配置）：
+
+   ```bash
+   scp nginx/tools.sheyinglai.top.conf root@106.14.171.234:/etc/nginx/sites-available/tools
    ```
 
    ```bash
-   sudo nginx -t && sudo systemctl reload nginx
+   ssh root@106.14.171.234 "mkdir -p /var/www/tools && ln -sf /etc/nginx/sites-available/tools /etc/nginx/sites-enabled/tools && nginx -t && systemctl reload nginx"
    ```
 
-   `reload` 不会中断已在运行的 sheyinglai.top。
-
-4. **配置 HTTPS**（DNS 生效后执行）：
-
-   ```bash
-   sudo certbot --nginx -d tools.sheyinglai.top
-   ```
-
-   certbot 会自动写入证书配置和 http → https 跳转，续期由已有的 certbot timer 负责。
+   必须先完成第 3 步，否则 `nginx -t` 会因为找不到证书文件而失败。`reload` 不会中断正在运行的 sheyinglai.top。
 
 5. **ICP 备案号**：把 `app/config/site.ts` 里的 `icp` 占位符改成真实备案号（子域名沿用主域名备案），页脚会链接到 <https://beian.miit.gov.cn>。
 
-### 二、发布
-
-确认本机可以通过 SSH 免密登录服务器后：
+### 二、发布（每次更新都执行）
 
 ```bash
-DEPLOY_HOST=106.14.171.234 DEPLOY_USER=<服务器用户名> ./scripts/deploy.sh
+pnpm generate
 ```
 
-脚本会先执行 `pnpm generate`，再用 `rsync -avz --delete` 把 `.output/public/` 同步到服务器 `/var/www/tools/`。已构建过可加 `SKIP_BUILD=1` 跳过构建。Windows 下请在 Git Bash 或 WSL 中运行（需要 `rsync`）。
+```bash
+ssh root@106.14.171.234 "rm -rf /tmp/public" ; scp -q -r .output/public root@106.14.171.234:/tmp/
+```
 
-### 三、上线检查
+```bash
+ssh root@106.14.171.234 "rm -rf /var/www/tools/* && cp -r /tmp/public/. /var/www/tools/ && rm -rf /tmp/public"
+```
+
+先把构建产物传到服务器的临时目录，再整体替换 `/var/www/tools`，最后清理临时目录。
+
+> `scripts/deploy.sh` 是 rsync 版本的发布脚本，只能在本机装有 `rsync` 的环境（macOS / Linux / WSL）使用。
+
+### 三、证书续期
+
+阿里云免费证书有效期较短（以控制台显示为准，目前为 3 个月），到期前在控制台重新申请，按第 2、3 步下载并覆盖 `/etc/nginx/cert/` 下的同名文件，然后执行：
+
+```bash
+ssh root@106.14.171.234 "nginx -t && systemctl reload nginx"
+```
+
+### 四、上线检查
 
 - `curl -I https://tools.sheyinglai.top` 返回 200 且证书有效
+- `http://tools.sheyinglai.top` 自动跳转到 https
 - 直接打开任意工具页（如 `/json-formatter`）并刷新，不出现 404
 - `https://sheyinglai.top` 和 `api.sheyinglai.top` 照常可用
-
