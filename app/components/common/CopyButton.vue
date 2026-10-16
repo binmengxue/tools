@@ -7,9 +7,14 @@ const props = withDefaults(defineProps<{
   text: string | (() => string)
   label?: string
   successMessage?: string
+  /** pane：面板标题栏里的紧凑样式 */
+  variant?: 'default' | 'pane'
+  disabled?: boolean
 }>(), {
   label: '复制',
   successMessage: '已复制到剪贴板',
+  variant: 'default',
+  disabled: false,
 })
 
 const { copy } = useClipboard()
@@ -31,7 +36,11 @@ onBeforeUnmount(() => clearTimeout(timer))
 <template>
   <button
     type="button"
-    class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-sm text-fg transition hover:border-primary hover:text-primary"
+    class="inline-flex items-center text-sm transition disabled:pointer-events-none disabled:opacity-40"
+    :class="variant === 'pane'
+      ? 'h-8 gap-1 rounded-md px-2 text-muted hover:bg-surface-2 hover:text-fg'
+      : 'h-9 gap-1.5 rounded-lg border border-line bg-surface px-3 text-fg hover:border-primary hover:text-primary'"
+    :disabled="disabled"
     @click="onClick"
   >
     <Icon
