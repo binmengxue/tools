@@ -29,6 +29,16 @@ useSeoMeta({
 // 构建时的汇率快照：预渲染时写进页面载荷，首屏就能显示结果
 const { data: snapshot } = await useFetch<RatesData>('/rates.json')
 
+// 货币中文名在预渲染时算好并写进页面载荷：Node 与各浏览器内置的地区数据不完全一致，
+// 直接在浏览器里重新计算可能和预渲染的 HTML 对不上（水合不一致）
+const { data: names } = await useAsyncData('currency-names', async () =>
+  Object.fromEntries(Object.keys(snapshot.value?.rates ?? {}).map(code => [code, currencyName(code)])),
+)
+/** 货币中文名：优先用载荷里的名称，实时汇率里新出现的币种再现算 */
+function nameOf(code: string): string {
+  return names.value?.[code] ?? currencyName(code)
+}
+
 // 浏览器里再取一次最新汇率，失败时继续用快照
 type LiveStatus = 'idle' | 'loading' | 'live' | 'failed'
 const live = ref<RatesData | null>(null)
@@ -65,7 +75,7 @@ const to = ref('CNY')
 const amount = computed(() => parseAmount(amountInput.value))
 const currencies = computed(() => sortCurrencies(Object.keys(rates.value?.rates ?? {})))
 const options = computed(() => currencies.value.map((code) => {
-  const name = currencyName(code)
+  const name = nameOf(code)
   return { code, label: name === code ? code : `${code} ${name}` }
 }))
 
@@ -203,11 +213,11 @@ const tips = [
         class="mt-6"
       >
         <p class="text-sm text-muted">
-          {{ amount.ok ? money(amount.value, from) : '—' }} {{ currencyName(from) }} =
+          {{ amount.ok ? money(amount.value, from) : '—' }} {{ nameOf(from) }} =
         </p>
         <div class="mt-1 flex flex-wrap items-baseline gap-x-2">
           <span class="font-mono text-4xl font-bold tabular-nums">{{ money(result, to) }}</span>
-          <span class="text-lg">{{ currencyName(to) }}</span>
+          <span class="text-lg">{{ nameOf(to) }}</span>
           <CopyButton
             :text="result === null ? '' : money(result, to)"
             label=""
@@ -264,10 +274,10 @@ const tips = [
           <thead>
             <tr class="text-left text-muted">
               <th class="py-2 font-normal">
-                {{ currencyName(from) }} → {{ currencyName(to) }}
+                {{ nameOf(from) }} → {{ nameOf(to) }}
               </th>
               <th class="py-2 text-right font-normal">
-                {{ currencyName(to) }} → {{ currencyName(from) }}
+                {{ nameOf(to) }} → {{ nameOf(from) }}
               </th>
             </tr>
           </thead>
@@ -301,10 +311,10 @@ const tips = [
               type="button"
               class="flex w-full items-center justify-between gap-3 border-b border-line py-2 text-left text-sm transition hover:text-primary"
               :class="{ 'text-primary': item.code === to }"
-              :title="`设为目标币种：${currencyName(item.code)}`"
+              :title="`设为目标币种：${nameOf(item.code)}`"
               @click="to = item.code"
             >
-              <span class="truncate">{{ currencyName(item.code) }} <span class="text-xs text-muted">{{ item.code }}</span></span>
+              <span class="truncate">{{ nameOf(item.code) }} <span class="text-xs text-muted">{{ item.code }}</span></span>
               <span class="font-mono tabular-nums">{{ formatMoney(item.value, item.code) }}</span>
             </button>
           </li>

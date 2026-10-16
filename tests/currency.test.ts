@@ -82,6 +82,8 @@ describe('格式化', () => {
     expect(fractionDigits('CNY')).toBe(2)
     expect(fractionDigits('JPY')).toBe(0)
     expect(fractionDigits('KRW')).toBe(0)
+    expect(fractionDigits('IDR')).toBe(0)
+    expect(fractionDigits('KWD')).toBe(3)
   })
 
   it('金额带千分位并按币种保留小数', () => {

@@ -85,21 +85,18 @@ export function parseAmount(input: string): ParseResult<number> {
   return { ok: true, value }
 }
 
-const digitsCache = new Map<string, number>()
+/**
+ * 小数位不是 2 的币种（依据 ISO 4217，另把日常不用小数的印尼盾也按 0 位）。
+ * 不用 Intl 查询：Node 和浏览器内置的地区数据不一致（如印尼盾一个给 2 位、一个给 0 位），会导致预渲染与页面显示不同。
+ */
+const ZERO_DIGIT = ['BIF', 'CLP', 'DJF', 'GNF', 'IDR', 'ISK', 'JPY', 'KMF', 'KRW', 'PYG', 'RWF', 'UGX', 'VND', 'VUV', 'XAF', 'XOF', 'XPF']
+const THREE_DIGIT = ['BHD', 'IQD', 'JOD', 'KWD', 'LYD', 'OMR', 'TND']
 
-/** 币种的标准小数位，如人民币 2 位、日元 0 位 */
+/** 币种的标准小数位，如人民币 2 位、日元 0 位、科威特第纳尔 3 位 */
 export function fractionDigits(code: string): number {
-  let digits = digitsCache.get(code)
-  if (digits === undefined) {
-    try {
-      digits = new Intl.NumberFormat('en-US', { style: 'currency', currency: code }).resolvedOptions().maximumFractionDigits ?? 2
-    }
-    catch {
-      digits = 2
-    }
-    digitsCache.set(code, digits)
-  }
-  return digits
+  if (ZERO_DIGIT.includes(code)) return 0
+  if (THREE_DIGIT.includes(code)) return 3
+  return 2
 }
 
 /** 按币种小数位格式化金额（带千分位，不带货币符号）；金额很小时多保留几位，避免显示成 0 */

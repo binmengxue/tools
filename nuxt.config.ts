@@ -6,6 +6,12 @@ import { tools } from './app/config/tools'
 export default defineNuxtConfig({
   modules: ['@nuxt/eslint', '@nuxt/icon', '@nuxtjs/sitemap'],
 
+  // 开发时允许从本地图标接口按需加载：dev 启动后新加的图标不在客户端图标包里，
+  // 如果仍是 provider: 'none' 会直接不显示（还会导致水合不一致）。生产构建不受影响。
+  $development: {
+    icon: { provider: 'server' },
+  },
+
   // 开启 SSR，配合 nuxt generate 预渲染出每个路由的完整 HTML
   ssr: true,
 
