@@ -11,11 +11,14 @@ withDefaults(defineProps<{
   invalid?: boolean
   /** 是否自动换行；代码类内容建议关闭，保留横向滚动 */
   wrap?: boolean
+  /** 文本框高度（Tailwind 类名） */
+  height?: string
 }>(), {
   placeholder: '',
   readonly: false,
   invalid: false,
   wrap: false,
+  height: 'h-80 lg:h-[32rem]',
 })
 
 const model = defineModel<string>({ default: '' })
@@ -41,7 +44,8 @@ const model = defineModel<string>({ default: '' })
       spellcheck="false"
       autocomplete="off"
       autocapitalize="off"
-      class="h-80 min-h-40 w-full resize-y bg-transparent p-3 font-mono text-sm leading-6 text-fg outline-none placeholder:text-muted lg:h-[32rem]"
+      class="min-h-40 w-full resize-y bg-transparent p-3 font-mono text-sm leading-6 text-fg outline-none placeholder:text-muted"
+      :class="height"
     />
     <slot name="footer" />
   </div>
