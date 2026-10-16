@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
+import { categories } from '../app/config/categories'
+import type { Category } from '../app/config/categories'
 import { tools } from '../app/config/tools'
 import type { Tool } from '../app/config/tools'
-import { filterTools, matchTool, normalize } from '../app/utils/search'
+import { groupTools, matchTool, normalize } from '../app/utils/search'
 
 // 构造测试用工具数据
 function makeTool(partial: Partial<Tool> & Pick<Tool, 'id'>): Tool {
@@ -9,17 +11,25 @@ function makeTool(partial: Partial<Tool> & Pick<Tool, 'id'>): Tool {
     name: partial.id,
     desc: '',
     icon: 'lucide:box',
-    categories: [],
+    color: '',
+    category: 'developer',
     keywords: [],
     path: `/${partial.id}`,
     ...partial,
   }
 }
 
+const groupList: Category[] = [
+  { id: 'developer', name: '开发者工具' },
+  { id: 'text', name: '文本工具' },
+  { id: 'image', name: '图片工具' },
+]
+
 const list: Tool[] = [
-  makeTool({ id: 'json-formatter', name: 'JSON 格式化', desc: 'JSON 美化与校验', categories: ['common', 'json'], keywords: ['beautify'] }),
-  makeTool({ id: 'base64', name: 'Base64 编解码', desc: '文本与 Base64 互转', categories: ['encode'], keywords: ['encode', 'decode'] }),
-  makeTool({ id: 'timestamp', name: '时间戳转换', desc: 'Unix 时间戳与日期互转', categories: ['common', 'datetime'], keywords: ['unix', 'shijianchuo'] }),
+  makeTool({ id: 'json-formatter', name: 'JSON 格式化', desc: '美化并校验 JSON', category: 'developer', keywords: ['beautify'] }),
+  makeTool({ id: 'timestamp', name: '时间戳转换', desc: '时间戳与日期互转', category: 'developer', keywords: ['unix', 'shijianchuo'] }),
+  makeTool({ id: 'text-diff', name: '文本对比', desc: '找出两段文本的差异', category: 'text', keywords: ['diff'] }),
+  makeTool({ id: 'qrcode-generator', name: '二维码生成', desc: '文字或网址转二维码', category: 'image', keywords: ['qr'] }),
 ]
 
 describe('normalize', () => {
@@ -36,69 +46,75 @@ describe('matchTool', () => {
 
   it('按名称匹配且忽略大小写', () => {
     expect(matchTool(list[0]!, 'json')).toBe(true)
-    expect(matchTool(list[1]!, 'BASE64')).toBe(true)
+    expect(matchTool(list[3]!, 'QR')).toBe(true)
   })
 
   it('按描述匹配', () => {
     expect(matchTool(list[0]!, '校验')).toBe(true)
-    expect(matchTool(list[2]!, '日期')).toBe(true)
+    expect(matchTool(list[1]!, '日期')).toBe(true)
   })
 
   it('按关键词匹配', () => {
     expect(matchTool(list[0]!, 'beautify')).toBe(true)
-    expect(matchTool(list[2]!, 'shijianchuo')).toBe(true)
+    expect(matchTool(list[1]!, 'shijianchuo')).toBe(true)
+  })
+
+  it('按额外文本（分组名）匹配', () => {
+    expect(matchTool(list[3]!, '图片', '图片工具')).toBe(true)
+    expect(matchTool(list[3]!, '图片')).toBe(false)
   })
 
   it('多个词需全部命中', () => {
-    expect(matchTool(list[2]!, 'unix 日期')).toBe(true)
-    expect(matchTool(list[2]!, 'unix json')).toBe(false)
-  })
-
-  it('不相关的词不匹配', () => {
-    expect(matchTool(list[1]!, '二维码')).toBe(false)
+    expect(matchTool(list[1]!, 'unix 日期')).toBe(true)
+    expect(matchTool(list[1]!, 'unix json')).toBe(false)
   })
 })
 
-describe('filterTools', () => {
-  it('默认返回全部工具', () => {
-    expect(filterTools(list)).toHaveLength(3)
+describe('groupTools', () => {
+  it('无搜索词时按分组顺序返回全部工具', () => {
+    const groups = groupTools(list, groupList)
+    expect(groups.map(g => g.category.id)).toEqual(['developer', 'text', 'image'])
+    expect(groups[0]!.tools.map(t => t.id)).toEqual(['json-formatter', 'timestamp'])
   })
 
-  it('按分类筛选', () => {
-    expect(filterTools(list, { tab: 'common' }).map(t => t.id)).toEqual(['json-formatter', 'timestamp'])
-    expect(filterTools(list, { tab: 'encode' }).map(t => t.id)).toEqual(['base64'])
-    expect(filterTools(list, { tab: 'image' })).toEqual([])
+  it('搜索时只返回有匹配工具的分组', () => {
+    const groups = groupTools(list, groupList, '对比')
+    expect(groups).toHaveLength(1)
+    expect(groups[0]!.category.id).toBe('text')
+    expect(groups[0]!.tools.map(t => t.id)).toEqual(['text-diff'])
   })
 
-  it('收藏 Tab 按收藏顺序返回，并忽略不存在的 id', () => {
-    const result = filterTools(list, { tab: 'favorites', favorites: ['timestamp', 'not-exist', 'base64'] })
-    expect(result.map(t => t.id)).toEqual(['timestamp', 'base64'])
+  it('搜索分组名返回该分组下全部工具', () => {
+    const groups = groupTools(list, groupList, '开发者')
+    expect(groups.map(g => g.category.id)).toEqual(['developer'])
+    expect(groups[0]!.tools).toHaveLength(2)
   })
 
-  it('收藏为空时返回空列表', () => {
-    expect(filterTools(list, { tab: 'favorites' })).toEqual([])
-  })
-
-  it('搜索在当前 Tab 范围内生效', () => {
-    expect(filterTools(list, { tab: 'all', query: '转' }).map(t => t.id)).toEqual(['base64', 'timestamp'])
-    expect(filterTools(list, { tab: 'common', query: '转' }).map(t => t.id)).toEqual(['timestamp'])
-    expect(filterTools(list, { tab: 'favorites', query: 'json', favorites: ['base64'] })).toEqual([])
+  it('没有匹配时返回空数组', () => {
+    expect(groupTools(list, groupList, '不存在的工具')).toEqual([])
   })
 })
 
 describe('工具注册表', () => {
+  it('第一版只有 6 个工具', () => {
+    expect(tools).toHaveLength(6)
+  })
+
   it('id 唯一且 path 与 id 对应', () => {
     const ids = tools.map(t => t.id)
     expect(new Set(ids).size).toBe(ids.length)
     for (const t of tools) expect(t.path).toBe(`/${t.id}`)
   })
 
-  it('每个工具都至少属于一个非「常用」分类', () => {
-    for (const t of tools) expect(t.categories.some(c => c !== 'common')).toBe(true)
+  it('每个工具都属于已定义的分组', () => {
+    const ids = categories.map(c => c.id)
+    for (const t of tools) expect(ids).toContain(t.category)
   })
 
   it('真实数据可被搜索到', () => {
-    expect(filterTools(tools, { query: 'md5' }).map(t => t.id)).toContain('hash-crypto')
-    expect(filterTools(tools, { query: '二维码' }).map(t => t.id)).toContain('qrcode-generator')
+    const found = (q: string) => groupTools(tools, categories, q).flatMap(g => g.tools.map(t => t.id))
+    expect(found('二维码')).toContain('qrcode-generator')
+    expect(found('去空行')).toContain('word-counter')
+    expect(found('unix')).toContain('timestamp')
   })
 })

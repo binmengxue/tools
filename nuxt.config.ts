@@ -24,8 +24,8 @@ export default defineNuxtConfig({
       link: [{ rel: 'icon', type: 'image/x-icon', href: '/favicon.ico' }],
       script: [
         {
-          // 首屏渲染前读取已保存的主题，避免浅色用户看到深色闪烁（写在这里，404 等 SPA 兜底页也会包含）
-          innerHTML: `try{if(localStorage.getItem('${THEME_STORAGE_KEY}')==='light')document.documentElement.dataset.theme='light'}catch(e){}`,
+          // 首屏渲染前读取已保存的主题，避免深色用户看到浅色闪烁（写在这里，404 等 SPA 兜底页也会包含）
+          innerHTML: `try{if(localStorage.getItem('${THEME_STORAGE_KEY}')==='dark')document.documentElement.dataset.theme='dark'}catch(e){}`,
         },
       ],
     },
@@ -43,9 +43,9 @@ export default defineNuxtConfig({
   nitro: {
     prerender: {
       crawlLinks: true,
-      // 首页 + 注册表中的全部工具页，每个路由输出 <路由>/index.html
+      // 首页、关于页 + 注册表中的全部工具页，每个路由输出 <路由>/index.html
       // （不用扁平的 <路由>.html：同名目录里有 _payload.json，nginx 的 $uri/ 会先命中目录导致 403）
-      routes: ['/', ...tools.map(t => t.path)],
+      routes: ['/', '/about', ...tools.map(t => t.path)],
     },
   },
 

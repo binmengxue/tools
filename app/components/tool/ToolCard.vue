@@ -1,64 +1,34 @@
 <script setup lang="ts">
 import type { Tool } from '~/config/tools'
 
-const props = defineProps<{ tool: Tool }>()
-
-const { isFavorite, toggleFavorite } = useFavorites()
-const favorited = computed(() => isFavorite(props.tool.id))
-const tags = computed(() => toolTags(props.tool))
-const color = computed(() => toolColor(props.tool))
+defineProps<{ tool: Tool }>()
 </script>
 
 <template>
-  <article class="group relative flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 transition hover:-translate-y-0.5 hover:border-primary/60 hover:shadow-lg hover:shadow-black/10">
-    <div class="flex items-start gap-3">
-      <span
-        class="flex size-11 shrink-0 items-center justify-center rounded-lg"
-        :class="color"
-      >
-        <Icon
-          :name="tool.icon"
-          class="size-6"
-        />
-      </span>
-      <div class="min-w-0 flex-1 pr-7">
-        <h3 class="truncate font-semibold">
-          <!-- 整张卡片可点击：链接的伪元素铺满卡片 -->
-          <NuxtLink
-            :to="tool.path"
-            class="outline-none after:absolute after:inset-0 after:rounded-xl focus-visible:after:ring-2 focus-visible:after:ring-primary"
-          >
-            {{ tool.name }}
-          </NuxtLink>
-        </h3>
-        <div class="mt-1.5 flex flex-wrap gap-1">
-          <span
-            v-for="tag in tags"
-            :key="tag.id"
-            class="rounded bg-surface-2 px-1.5 py-0.5 text-xs text-muted"
-          >{{ tag.name }}</span>
-        </div>
-      </div>
-    </div>
-    <p class="line-clamp-2 text-sm leading-relaxed text-muted">
+  <NuxtLink
+    :to="tool.path"
+    class="group flex flex-col rounded-xl border border-line bg-surface p-5 transition hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-lg hover:shadow-black/5 focus-visible:outline-2 focus-visible:outline-primary"
+  >
+    <Icon
+      :name="tool.icon"
+      class="size-6"
+      :class="tool.color"
+    />
+    <h3 class="mt-3 text-base font-semibold text-fg">
+      {{ tool.name }}
+    </h3>
+    <p class="mt-1 line-clamp-2 text-sm text-muted">
       {{ tool.desc }}
     </p>
-
-    <!-- 收藏星标（层级高于整卡链接） -->
-    <button
-      type="button"
-      class="absolute top-3 right-3 z-10 flex size-8 items-center justify-center rounded-md transition hover:bg-surface-2"
-      :class="favorited ? 'text-amber-400 light:text-amber-500' : 'text-muted opacity-60 group-hover:opacity-100'"
-      :title="favorited ? '取消收藏' : '收藏'"
-      :aria-label="favorited ? `取消收藏${tool.name}` : `收藏${tool.name}`"
-      :aria-pressed="favorited"
-      @click="toggleFavorite(tool.id)"
+    <span
+      class="mt-4 inline-flex items-center gap-1 text-sm font-medium"
+      :class="tool.color"
     >
+      立即使用
       <Icon
-        name="lucide:star"
-        class="size-4.5"
-        :class="{ 'icon-filled': favorited }"
+        name="lucide:arrow-right"
+        class="size-4 transition group-hover:translate-x-0.5"
       />
-    </button>
-  </article>
+    </span>
+  </NuxtLink>
 </template>

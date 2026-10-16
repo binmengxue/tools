@@ -1,6 +1,6 @@
 /**
  * 深色 / 浅色主题切换
- * 主题通过 <html data-theme="light"> 切换 CSS 变量；默认深色。
+ * 主题通过 <html data-theme="dark"> 切换 CSS 变量；默认浅色。
  * 首屏由 nuxt.config 中 app.head 的内联脚本提前设置，避免闪烁。
  */
 import { THEME_STORAGE_KEY } from '~/config/site'
@@ -8,12 +8,12 @@ import { THEME_STORAGE_KEY } from '~/config/site'
 export type Theme = 'dark' | 'light'
 
 export function useTheme() {
-  const theme = useState<Theme>('theme', () => 'dark')
+  const theme = useState<Theme>('theme', () => 'light')
 
   /** 客户端挂载后同步内联脚本已设置的主题 */
   function init() {
     if (import.meta.server) return
-    theme.value = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'
+    theme.value = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'
   }
 
   function setTheme(value: Theme) {

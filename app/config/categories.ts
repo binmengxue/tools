@@ -1,41 +1,25 @@
 /**
- * 工具分类配置
- * 首页分类 Tab、卡片标签、图标配色都由这里驱动。
+ * 工具分组配置
+ * 首页按分组展示卡片，工具页面包屑也显示所属分组。
  */
 
-export type CategoryId
-  = | 'common'
-    | 'json'
-    | 'encode'
-    | 'datetime'
-    | 'code'
-    | 'text'
-    | 'image'
-    | 'frontend'
+export type CategoryId = 'developer' | 'text' | 'image'
 
 export interface Category {
-  /** 分类唯一标识 */
+  /** 分组唯一标识 */
   id: CategoryId
-  /** 分类中文名（Tab 与卡片标签上显示） */
+  /** 分组中文名 */
   name: string
-  /** Tab 上的图标（Iconify 名称） */
-  icon: string
-  /** 卡片图标的主题色（Tailwind 文字色 + 背景色类名） */
-  color: string
 }
 
+/** 首页按这个顺序展示分组 */
 export const categories: Category[] = [
-  { id: 'common', name: '常用工具', icon: 'lucide:flame', color: 'text-orange-400 light:text-orange-600 bg-orange-400/10' },
-  { id: 'json', name: 'JSON', icon: 'lucide:braces', color: 'text-amber-400 light:text-amber-600 bg-amber-400/10' },
-  { id: 'encode', name: '编码加密', icon: 'lucide:lock', color: 'text-emerald-400 light:text-emerald-600 bg-emerald-400/10' },
-  { id: 'datetime', name: '时间日期', icon: 'lucide:clock', color: 'text-sky-400 light:text-sky-600 bg-sky-400/10' },
-  { id: 'code', name: '代码', icon: 'lucide:code-xml', color: 'text-violet-400 light:text-violet-600 bg-violet-400/10' },
-  { id: 'text', name: '文本', icon: 'lucide:type', color: 'text-rose-400 light:text-rose-600 bg-rose-400/10' },
-  { id: 'image', name: '图像', icon: 'lucide:image', color: 'text-pink-400 light:text-pink-600 bg-pink-400/10' },
-  { id: 'frontend', name: '前端开发', icon: 'lucide:palette', color: 'text-cyan-400 light:text-cyan-600 bg-cyan-400/10' },
+  { id: 'developer', name: '开发者工具' },
+  { id: 'text', name: '文本工具' },
+  { id: 'image', name: '图片工具' },
 ]
 
-/** 根据 id 查找分类 */
+/** 根据 id 查找分组 */
 export function getCategory(id: CategoryId): Category | undefined {
   return categories.find(c => c.id === id)
 }

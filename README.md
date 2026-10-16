@@ -1,13 +1,25 @@
-# 效率工具箱
+# 轻工具箱
 
-免费、无广告的中文在线效率工具箱，线上地址：<https://tools.sheyinglai.top>
+一个无需注册、打开即用的中文在线工具网站，线上地址：<https://tools.sheyinglai.top>
 
-- JSON 格式化、编码加密、时间戳转换、正则测试、图片压缩等常用开发 / 办公小工具
+面向经常需要处理文本、代码和文件的开发者、学生和办公人员。
+
 - **纯前端**：所有数据只在浏览器本地处理，不上传服务器
 - **静态生成**：每个工具一个独立 HTML 页面，利于搜索引擎收录
-- 深色 / 浅色主题、收藏、最近使用、`Ctrl + K` 快速搜索，适配手机
+- 浅色 / 深色主题、`Ctrl + K` 快速搜索，适配手机
 
-> 当前进度：项目骨架、首页、工具页外壳已完成，各工具页面为「开发中」占位，排期见 [PLAN.md](PLAN.md)。
+## 第一版工具
+
+| 工具 | 功能 | 状态 |
+|---|---|---|
+| JSON 格式化与校验 | 输入后自动格式化、校验语法、显示错误位置，支持复制结果 | 开发中 |
+| 文本差异对比 | 左右输入两段文本，标记新增、删除和修改的内容，支持清空与交换 | 开发中 |
+| 字数统计与文本清洗 | 统计字符、单词和段落数，支持去除空行、首尾空格、重复空格 | 开发中 |
+| 二维码生成 | 输入网址或文字生成二维码，支持下载 PNG | 开发中 |
+| 时间戳转换 | 时间戳与日期互转，区分秒与毫秒，标明时区 | 开发中 |
+| 图片压缩 | 上传图片，调整压缩质量，对比压缩前后大小并下载 | 开发中 |
+
+优先完成前 4 个，后 2 个视进度而定。
 
 ## 技术栈
 
@@ -24,16 +36,17 @@
 ```
 app/
   config/
-    categories.ts     # 分类配置
+    categories.ts     # 首页分组（开发者工具 / 文本工具 / 图片工具）
     tools.ts          # 工具注册表（首页卡片、搜索、预渲染路由都由它驱动）
-    site.ts           # 站点名称、域名、ICP 备案号
+    site.ts           # 站点名称、标语、域名、ICP 备案号
   components/
     layout/           # AppHeader、AppFooter
     tool/             # ToolCard、ToolLayout、ToolPlaceholder
     common/           # CopyButton、AppToast
-  composables/        # useFavorites、useRecent、useTheme、useClipboard、useToast、useHomeFilter
-  utils/              # 纯函数逻辑（搜索过滤、localStorage 读写等），配 Vitest 单测
-  pages/              # index.vue 首页 + 每个工具一个 <tool-id>.vue
+  composables/        # useTheme、useClipboard、useToast
+  utils/              # 纯函数逻辑（首页搜索分组等），配 Vitest 单测
+    tools/            # 各工具的核心逻辑（需显式 import，嵌套目录不会自动导入）
+  pages/              # index.vue 首页、about.vue 关于页 + 每个工具一个 <tool-id>.vue
   error.vue           # 404 / 错误页
 tests/                # Vitest 单元测试
 nginx/                # nginx 站点配置示例
@@ -43,9 +56,9 @@ scripts/deploy.sh     # rsync 发布脚本（需要本机有 rsync）
 
 ### 新增一个工具
 
-1. 在 `app/config/tools.ts` 里加一条配置（`id`、`name`、`desc`、`icon`、`categories`、`keywords`、`path`）。
+1. 在 `app/config/tools.ts` 里加一条配置（`id`、`name`、`desc`、`icon`、`color`、`category`、`keywords`、`path`）。
 2. 新建 `app/pages/<id>.vue`，用 `<ToolLayout tool-id="<id>">` 包住工具内容，并调用 `useSeoMeta(toolSeo(tool))`。
-3. 工具的核心逻辑写成纯函数放到 `app/utils/`，在 `tests/` 里补单测。
+3. 工具的核心逻辑写成纯函数放到 `app/utils/tools/`，在 `tests/` 里补单测。
 
 图标名请写成字面量（如 `'lucide:braces'`），`@nuxt/icon` 才能在构建时扫描并打包。
 

@@ -12,8 +12,8 @@ const is404 = computed(() => props.error.statusCode === 404)
 useHead({ title: is404.value ? '页面不存在' : '出错了' })
 useSeoMeta({ robots: 'noindex' })
 
-// 推荐几个常用工具，减少用户流失
-const suggestions = tools.filter(t => t.categories.includes('common')).slice(0, 6)
+// 推荐站内工具，减少用户流失
+const suggestions = tools
 
 function backHome() {
   clearError({ redirect: '/' })

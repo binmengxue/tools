@@ -1,18 +1,12 @@
 /**
- * 首页工具筛选逻辑（纯函数，便于单测）
+ * 首页搜索与分组逻辑（纯函数，便于单测）
  */
+import type { Category } from '../config/categories'
 import type { Tool } from '../config/tools'
 
-/** 首页 Tab：全部 / 我的收藏 / 具体分类 */
-export type TabId = 'all' | 'favorites' | Tool['categories'][number]
-
-export interface FilterOptions {
-  /** 当前选中的 Tab */
-  tab?: TabId
-  /** 搜索关键字 */
-  query?: string
-  /** 已收藏的工具 id 列表（tab 为 favorites 时使用，并保持收藏顺序） */
-  favorites?: string[]
+export interface ToolGroup {
+  category: Category
+  tools: Tool[]
 }
 
 /** 统一处理大小写与首尾空白 */
@@ -21,36 +15,25 @@ export function normalize(text: string): string {
 }
 
 /**
- * 判断工具是否匹配搜索词：名称、描述、关键词任一包含即可。
+ * 判断工具是否匹配搜索词：名称、描述、关键词以及额外文本（如分组名）任一包含即可。
  * 多个空格分隔的词需全部命中（AND 关系）。
  */
-export function matchTool(tool: Tool, query: string): boolean {
+export function matchTool(tool: Tool, query: string, extra = ''): boolean {
   const terms = normalize(query).split(/\s+/).filter(Boolean)
   if (terms.length === 0) return true
-  const haystack = [tool.name, tool.desc, ...tool.keywords].join(' ').toLowerCase()
+  const haystack = [tool.name, tool.desc, ...tool.keywords, extra].join(' ').toLowerCase()
   return terms.every(term => haystack.includes(term))
 }
 
 /**
- * 按 Tab 与搜索词筛选工具。
- * 有搜索词时在当前 Tab 范围内继续过滤。
+ * 按分组顺序整理工具，并按搜索词过滤；没有匹配工具的分组不返回。
+ * 搜索词也会匹配分组名，例如「图片」能找到图片工具下的全部工具。
  */
-export function filterTools(list: Tool[], options: FilterOptions = {}): Tool[] {
-  const { tab = 'all', query = '', favorites = [] } = options
-
-  let scoped: Tool[]
-  if (tab === 'all') {
-    scoped = list
-  }
-  else if (tab === 'favorites') {
-    // 按收藏顺序返回，忽略已下线的工具 id
-    scoped = favorites
-      .map(id => list.find(t => t.id === id))
-      .filter((t): t is Tool => Boolean(t))
-  }
-  else {
-    scoped = list.filter(t => t.categories.includes(tab))
-  }
-
-  return scoped.filter(t => matchTool(t, query))
+export function groupTools(list: Tool[], categoryList: Category[], query = ''): ToolGroup[] {
+  return categoryList
+    .map(category => ({
+      category,
+      tools: list.filter(t => t.category === category.id && matchTool(t, query, category.name)),
+    }))
+    .filter(group => group.tools.length > 0)
 }

@@ -3,15 +3,9 @@ import { site } from '~/config/site'
 </script>
 
 <template>
-  <footer class="mt-12 border-t border-line">
-    <div class="mx-auto flex max-w-7xl flex-col items-center gap-2 px-4 py-6 text-center text-sm text-muted">
-      <p class="flex items-center gap-1.5">
-        <Icon
-          name="lucide:shield-check"
-          class="size-4 text-emerald-500"
-        />
-        所有工具均在浏览器本地运行，数据不会上传到服务器
-      </p>
+  <footer class="mt-16 border-t border-line">
+    <div class="mx-auto flex max-w-5xl flex-col items-center gap-2 px-4 py-6 text-center text-sm text-muted">
+      <p>本地处理优先 · 保护用户隐私 · 持续更新</p>
       <p>
         © {{ site.since }} {{ site.name }}
         <span class="mx-1.5">·</span>

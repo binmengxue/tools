@@ -6,8 +6,8 @@ import { site } from '~/config/site'
 
 export default defineNuxtPlugin(() => {
   useHead({
-    titleTemplate: title => (title ? `${title} - ${site.name}` : `${site.name} - 免费中文在线效率工具`),
-    meta: [{ name: 'theme-color', content: '#0b0d12' }],
+    titleTemplate: title => (title ? `${title} - ${site.name}` : `${site.name} - ${site.slogan}`),
+    meta: [{ name: 'theme-color', content: '#5b4fe0' }],
   })
 
   useSeoMeta({
