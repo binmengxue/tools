@@ -1,0 +1,70 @@
+@import "tailwindcss";
+
+/* 浅色主题变体：<html data-theme="light"> 时生效，用法如 light:text-orange-600 */
+@custom-variant light (&:where([data-theme=light], [data-theme=light] *));
+
+/* 主题色板：默认深色 */
+:root {
+  --bg: #0b0d12;
+  --surface: #14171f;
+  --surface-2: #1b1f2a;
+  --border: #252a36;
+  --text: #e7e9ef;
+  --muted: #8a92a6;
+  --primary: #4f8cff;
+  --primary-fg: #ffffff;
+
+  color-scheme: dark;
+}
+
+/* 浅色主题 */
+[data-theme=light] {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --surface-2: #f0f2f5;
+  --border: #e3e6eb;
+  --text: #1c2029;
+  --muted: #646b7a;
+  --primary: #2f6fec;
+  --primary-fg: #ffffff;
+
+  color-scheme: light;
+}
+
+/* 把 CSS 变量注册为 Tailwind 颜色：bg-surface、text-muted、border-line 等 */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--border);
+  --color-fg: var(--text);
+  --color-muted: var(--muted);
+  --color-primary: var(--primary);
+  --color-primary-fg: var(--primary-fg);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+}
+
+html {
+  background-color: var(--bg);
+  color: var(--text);
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background-color: var(--bg);
+  font-family: var(--font-sans);
+}
+
+/* 实心图标：把 SVG 内部路径的填充改为当前文字色（如已收藏的星标） */
+.icon-filled * {
+  fill: currentColor;
+}
+
+/* 横向滚动区域隐藏滚动条（分类 Tab 在手机上可滑动） */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
