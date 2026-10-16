@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // 工具页：时间戳转换
 import { getTool } from '~/config/tools'
+import { COMMON_TIME_ZONES } from '~/utils/tools/timezone'
 import {
-  COMMON_TIME_ZONES,
   formatInZone,
   formatOffset,
   formatRelative,

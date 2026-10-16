@@ -100,6 +100,18 @@ export const tools: Tool[] = [
     keywords: ['image', 'compress', '图片', '压缩', 'jpg', 'png', 'webp'],
     path: '/image-compress',
   },
+
+  // ===== 生活工具 =====
+  {
+    id: 'timezone-converter',
+    name: '时区转换',
+    desc: '世界各地时间对照，换算会议时间',
+    icon: 'lucide:globe',
+    color: 'text-indigo-600 dark:text-indigo-400',
+    category: 'life',
+    keywords: ['timezone', '时区', '世界时间', '时差', 'utc', 'gmt', '北京时间', '会议', 'shiqu'],
+    path: '/timezone-converter',
+  },
 ]
 
 /** 根据 id 查找工具 */

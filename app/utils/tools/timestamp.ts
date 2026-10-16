@@ -190,16 +190,3 @@ export function formatRelative(ms: number, now: number): string {
 export function getLocalTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 }
-
-/** 页面上可选的常用时区 */
-export const COMMON_TIME_ZONES: { value: string, label: string }[] = [
-  { value: 'Asia/Shanghai', label: '北京 / 上海' },
-  { value: 'Asia/Hong_Kong', label: '香港' },
-  { value: 'Asia/Tokyo', label: '东京' },
-  { value: 'Asia/Singapore', label: '新加坡' },
-  { value: 'Europe/London', label: '伦敦' },
-  { value: 'Europe/Paris', label: '巴黎' },
-  { value: 'America/New_York', label: '纽约' },
-  { value: 'America/Los_Angeles', label: '洛杉矶' },
-  { value: 'UTC', label: 'UTC 协调世界时' },
-]
