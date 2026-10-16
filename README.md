@@ -17,9 +17,9 @@
 | 字数统计与文本清洗 | 统计字符、单词和段落数，支持去除空行、首尾空格、重复空格 | ✅ 已完成 |
 | 二维码生成 | 输入网址或文字生成二维码，支持下载 PNG | ✅ 已完成 |
 | 时间戳转换 | 时间戳与日期互转，区分秒与毫秒，标明时区 | ✅ 已完成 |
-| 图片压缩 | 上传图片，调整压缩质量，对比压缩前后大小并下载 | 开发中 |
+| 图片压缩 | 上传图片，调整压缩质量，对比压缩前后大小并下载 | ✅ 已完成 |
 
-优先完成前 4 个，后 2 个视进度而定。
+所有工具都在浏览器本地运行：JSON 解析器为手写实现（中文报错 + 行列定位 + 大数字不丢精度），文本对比基于 jsdiff，二维码基于 qrcode，时间戳和图片压缩只用原生 Intl 与 Canvas。
 
 ## 技术栈
 
@@ -41,8 +41,8 @@ app/
     site.ts           # 站点名称、标语、域名、ICP 备案号
   components/
     layout/           # AppHeader、AppFooter
-    tool/             # ToolCard、ToolLayout、ToolPlaceholder
-    common/           # CopyButton、AppToast
+    tool/             # ToolCard、ToolLayout
+    common/           # EditorPane、SegmentedControl、PaneButton、FileDrop、CopyButton、AppToast
   composables/        # useTheme、useClipboard、useToast
   utils/              # 纯函数逻辑（首页搜索分组等），配 Vitest 单测
     tools/            # 各工具的核心逻辑（需显式 import，嵌套目录不会自动导入）
