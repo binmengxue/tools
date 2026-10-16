@@ -96,8 +96,8 @@ describe('groupTools', () => {
 })
 
 describe('工具注册表', () => {
-  it('第一版只有 6 个工具', () => {
-    expect(tools).toHaveLength(6)
+  it('工具数量与注册表一致', () => {
+    expect(tools).toHaveLength(7)
   })
 
   it('id 唯一且 path 与 id 对应', () => {

@@ -2,6 +2,7 @@
  * 二维码生成的表单校验（纯函数，配 Vitest 单测）
  * 真正的绘制交给 qrcode 库，在页面里按需动态加载。
  */
+import { contrastBetween, luminance, parseHex } from './color'
 
 export type ErrorLevel = 'L' | 'M' | 'Q' | 'H'
 
@@ -62,29 +63,12 @@ export function checkUrl(text: string): string | null {
   return null
 }
 
-/** 解析 #RRGGBB 颜色 */
-function parseHex(hex: string): [number, number, number] | null {
-  const match = /^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(hex)
-  if (!match) return null
-  return [Number.parseInt(match[1]!, 16), Number.parseInt(match[2]!, 16), Number.parseInt(match[3]!, 16)]
-}
-
-/** 相对亮度（WCAG 定义） */
-function luminance([r, g, b]: [number, number, number]): number {
-  const channel = (v: number) => {
-    const c = v / 255
-    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
-  }
-  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
-}
-
-/** 两种颜色的对比度（1 ~ 21），颜色格式不对时返回 null */
+/** 两种 #RRGGBB 颜色的对比度（1 ~ 21），颜色格式不对时返回 null */
 export function contrastRatio(a: string, b: string): number | null {
   const ca = parseHex(a)
   const cb = parseHex(b)
   if (!ca || !cb) return null
-  const [hi, lo] = [luminance(ca), luminance(cb)].sort((x, y) => y - x) as [number, number]
-  return (hi + 0.05) / (lo + 0.05)
+  return contrastBetween(ca, cb)
 }
 
 /** 二维码要能被扫出来，前景色需要比背景色深，且对比度足够 */

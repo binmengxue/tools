@@ -46,6 +46,16 @@ export const tools: Tool[] = [
     keywords: ['timestamp', 'unix', '时间戳', '日期', 'date', '时区', 'shijianchuo'],
     path: '/timestamp',
   },
+  {
+    id: 'color-converter',
+    name: '颜色工具',
+    desc: 'HEX / RGB / HSL 互转，取色与对比度检查',
+    icon: 'lucide:palette',
+    color: 'text-fuchsia-600 dark:text-fuchsia-400',
+    category: 'developer',
+    keywords: ['color', '颜色', '取色', 'hex', 'rgb', 'hsl', 'cmyk', '对比度', '配色', 'yanse'],
+    path: '/color-converter',
+  },
 
   // ===== 文本工具 =====
   {
