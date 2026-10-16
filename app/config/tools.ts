@@ -112,6 +112,16 @@ export const tools: Tool[] = [
     keywords: ['timezone', '时区', '世界时间', '时差', 'utc', 'gmt', '北京时间', '会议', 'shiqu'],
     path: '/timezone-converter',
   },
+  {
+    id: 'currency-converter',
+    name: '货币转换',
+    desc: '美元、欧元、日元等 160 多种货币实时汇率换算',
+    icon: 'lucide:banknote',
+    color: 'text-amber-600 dark:text-amber-400',
+    category: 'life',
+    keywords: ['currency', '汇率', '货币', '换算', '美元', '人民币', '欧元', '日元', '港币', 'huilv'],
+    path: '/currency-converter',
+  },
 ]
 
 /** 根据 id 查找工具 */

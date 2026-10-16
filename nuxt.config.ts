@@ -45,7 +45,8 @@ export default defineNuxtConfig({
       crawlLinks: true,
       // 首页、关于页 + 注册表中的全部工具页，每个路由输出 <路由>/index.html
       // （不用扁平的 <路由>.html：同名目录里有 _payload.json，nginx 的 $uri/ 会先命中目录导致 403）
-      routes: ['/', '/about', ...tools.map(t => t.path)],
+      // /rates.json 是货币转换的汇率快照（server/routes/rates.json.ts），构建时生成一次
+      routes: ['/', '/about', '/rates.json', ...tools.map(t => t.path)],
     },
   },
 
