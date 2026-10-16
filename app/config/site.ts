@@ -2,7 +2,7 @@
  * 站点基础信息
  */
 export const site = {
-  name: '效率工具箱',
+  name: '效率工具箱1',
   url: 'https://tools.sheyinglai.top',
   description: '免费、无广告的中文在线效率工具箱：JSON 格式化、编码加密、时间戳转换、正则测试、图片压缩等，所有数据仅在浏览器本地处理。',
   // TODO: 替换为真实 ICP 备案号（子域名沿用主域名 sheyinglai.top 的备案）
