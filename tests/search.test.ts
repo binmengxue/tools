@@ -97,7 +97,7 @@ describe('groupTools', () => {
 
 describe('工具注册表', () => {
   it('工具数量与注册表一致', () => {
-    expect(tools).toHaveLength(9)
+    expect(tools).toHaveLength(10)
   })
 
   it('id 唯一且 path 与 id 对应', () => {

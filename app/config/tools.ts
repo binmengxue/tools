@@ -122,6 +122,16 @@ export const tools: Tool[] = [
     keywords: ['currency', '汇率', '货币', '换算', '美元', '人民币', '欧元', '日元', '港币', 'huilv'],
     path: '/currency-converter',
   },
+  {
+    id: 'unit-converter',
+    name: '单位换算',
+    desc: '长度、面积、重量、温度、网速等常用单位换算',
+    icon: 'lucide:ruler',
+    color: 'text-cyan-600 dark:text-cyan-400',
+    category: 'life',
+    keywords: ['unit', '单位', '换算', '长度', '面积', '重量', '温度', '体积', '速度', '市斤', '亩', '英寸', '网速', 'danwei'],
+    path: '/unit-converter',
+  },
 ]
 
 /** 根据 id 查找工具 */
