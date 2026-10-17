@@ -1,23 +1,41 @@
 /**
- * 人像美颜后台线程的封装：初始化、按最新参数渲染（拖动滑杆时只保留最后一次请求）。
+ * 人像美颜后台线程的封装。
+ * 请求排队规则：笔画、撤销、重做按顺序全部执行；渲染（拖动滑杆）只保留最新一次；
+ * 推拉画笔拖动中的同一笔只保留最新的路径。
  */
 import type { RetouchParams } from '~/utils/tools/retouch/engine'
+import type { ManualTool } from '~/utils/tools/retouch/manual'
 import type { Point } from '~/utils/tools/retouch/regions'
 import type { WorkerRequest, WorkerResponse } from '~/utils/tools/retouch/retouch.worker'
+
+type Command = Exclude<WorkerRequest, { type: 'init' } | { type: 'render' }>
 
 export function useRetouchWorker(onResult: (rgba: Uint8ClampedArray) => void) {
   const busy = ref(false)
   const spots = ref(0)
   const lastMs = ref(0)
   const error = ref('')
+  const canUndo = ref(false)
+  const canRedo = ref(false)
 
   let worker: Worker | null = null
-  let nextId = 0
-  let pending: RetouchParams | null = null
   let readyResolve: (() => void) | null = null
+  let pendingRender: RetouchParams | null = null
+  const commands: Command[] = []
 
-  function send(message: WorkerRequest, transfer: Transferable[] = []) {
-    worker?.postMessage(message, transfer)
+  function next() {
+    if (!worker || busy.value) return
+    const command = commands.shift()
+    if (command) {
+      busy.value = true
+      worker.postMessage(command)
+      return
+    }
+    if (pendingRender) {
+      busy.value = true
+      worker.postMessage({ type: 'render', params: pendingRender } satisfies WorkerRequest)
+      pendingRender = null
+    }
   }
 
   function handle(event: MessageEvent<WorkerResponse>) {
@@ -25,22 +43,20 @@ export function useRetouchWorker(onResult: (rgba: Uint8ClampedArray) => void) {
     if (msg.type === 'ready') {
       readyResolve?.()
       readyResolve = null
+      return
     }
-    else if (msg.type === 'result') {
+    busy.value = false
+    if (msg.type === 'result') {
       spots.value = msg.spots
       lastMs.value = msg.ms
+      canUndo.value = msg.canUndo
+      canRedo.value = msg.canRedo
       onResult(msg.rgba)
-      busy.value = false
-      if (pending) {
-        const params = pending
-        pending = null
-        render(params)
-      }
     }
     else {
       error.value = msg.message
-      busy.value = false
     }
+    next()
   }
 
   /** 把原图和人脸关键点交给后台线程，完成预处理后返回 */
@@ -49,31 +65,48 @@ export function useRetouchWorker(onResult: (rgba: Uint8ClampedArray) => void) {
     worker = new Worker(new URL('../utils/tools/retouch/retouch.worker.ts', import.meta.url), { type: 'module' })
     worker.addEventListener('message', handle)
     error.value = ''
+    canUndo.value = false
+    canRedo.value = false
     return new Promise((resolve) => {
       readyResolve = resolve
-      send({ type: 'init', width, height, rgba, faces }, [rgba.buffer])
+      worker!.postMessage({ type: 'init', width, height, rgba, faces } satisfies WorkerRequest, [rgba.buffer])
     })
   }
 
-  /** 按参数渲染；上一次还没算完时只记住最新参数 */
+  /** 按参数渲染（只保留最新一次） */
   function render(params: RetouchParams) {
-    if (!worker) return
-    if (busy.value) {
-      pending = { ...params }
-      return
-    }
-    busy.value = true
-    send({ type: 'render', id: ++nextId, params: { ...params } })
+    pendingRender = { ...params }
+    next()
+  }
+
+  /** 提交一笔画笔操作；同一笔的后续更新会替换排队中尚未发送的旧路径 */
+  function stroke(strokeId: number, tool: ManualTool, points: Point[], radius: number) {
+    const last = commands[commands.length - 1]
+    const command: Command = { type: 'stroke', strokeId, tool, points: points.map(p => ({ x: p.x, y: p.y })), radius }
+    if (last && last.type === 'stroke' && last.strokeId === strokeId) commands[commands.length - 1] = command
+    else commands.push(command)
+    next()
+  }
+
+  function undo() {
+    commands.push({ type: 'undo' })
+    next()
+  }
+
+  function redo() {
+    commands.push({ type: 'redo' })
+    next()
   }
 
   function dispose() {
     worker?.terminate()
     worker = null
-    pending = null
+    pendingRender = null
+    commands.length = 0
     busy.value = false
   }
 
   onBeforeUnmount(dispose)
 
-  return { busy, spots, lastMs, error, start, render, dispose }
+  return { busy, spots, lastMs, error, canUndo, canRedo, start, render, stroke, undo, redo, dispose }
 }

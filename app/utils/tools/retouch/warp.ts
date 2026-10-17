@@ -113,6 +113,42 @@ export function applyWarp(src: Uint8ClampedArray, width: number, height: number,
   return out
 }
 
+/**
+ * 依次应用一串控制点（每个控制点单独一次变形，后一次作用在前一次的结果上），原地修改。
+ * 用于推拉画笔：拖动路径上的每一小步都在上一步的基础上继续推。
+ * 每步只复制受影响的小块区域，避免反复复制整张图。
+ */
+export function applyWarpSequence(rgba: Uint8ClampedArray, width: number, height: number, controls: WarpControl[]): void {
+  const px = new Float32Array(4)
+  for (const c of controls) {
+    const rect = controlsBounds([c], width, height)
+    if (!rect) continue
+    // 取样可能落在影响范围外最多 0.4 × 半径处，快照要多留一圈
+    const margin = Math.ceil(c.radius * 0.4) + 2
+    const sx0 = Math.max(0, rect.x - margin)
+    const sy0 = Math.max(0, rect.y - margin)
+    const sw = Math.min(width, rect.x + rect.width + margin) - sx0
+    const sh = Math.min(height, rect.y + rect.height + margin) - sy0
+    const snapshot = new Uint8ClampedArray(sw * sh * 4)
+    for (let y = 0; y < sh; y++) {
+      const from = ((sy0 + y) * width + sx0) * 4
+      snapshot.set(rgba.subarray(from, from + sw * 4), y * sw * 4)
+    }
+    for (let y = rect.y; y < rect.y + rect.height; y++) {
+      for (let x = rect.x; x < rect.x + rect.width; x++) {
+        const d = displacementAt(x + 0.5, y + 0.5, [c])
+        if (d.x === 0 && d.y === 0) continue
+        sample(snapshot, sw, sh, x - d.x - sx0, y - d.y - sy0, px)
+        const i = (y * width + x) * 4
+        rgba[i] = px[0]!
+        rgba[i + 1] = px[1]!
+        rgba[i + 2] = px[2]!
+        rgba[i + 3] = px[3]!
+      }
+    }
+  }
+}
+
 /** 下颌线上两侧对称的关键点（从颧骨往下到下巴），用于瘦脸 */
 export const JAW_RIGHT = [93, 132, 58, 172, 136, 150, 149, 176, 148]
 export const JAW_LEFT = [323, 361, 288, 397, 365, 379, 378, 400, 377]

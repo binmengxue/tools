@@ -1,10 +1,12 @@
 <script setup lang="ts">
 // 工具页：人像美颜（AI 识别人脸 + 本地图像处理，照片不上传）
 import type { NormalizedLandmark } from '@mediapipe/tasks-vision'
+import RetouchCanvas from '~/components/retouch/RetouchCanvas.vue'
 import { getTool } from '~/config/tools'
 import { fitSize, formatBytes, validateImageFile } from '~/utils/tools/image'
 import { BEAUTY_PRESET, ZERO_PARAMS } from '~/utils/tools/retouch/engine'
 import type { RetouchParams } from '~/utils/tools/retouch/engine'
+import type { ManualTool } from '~/utils/tools/retouch/manual'
 import {
   FACE_OVAL,
   LEFT_EYE,
@@ -16,6 +18,7 @@ import {
   RIGHT_UNDER_EYE,
   toPolygon,
 } from '~/utils/tools/retouch/regions'
+import type { Point } from '~/utils/tools/retouch/regions'
 
 const tool = getTool('portrait-retouch')!
 
@@ -39,10 +42,10 @@ const work = shallowRef<WorkImage | null>(null)
 const result = shallowRef<ImageData | null>(null)
 const faces = shallowRef<NormalizedLandmark[][]>([])
 const detecting = ref(false)
-const preparing = ref(false)
+const workerReady = ref(false)
 const showLandmarks = ref(false)
 const comparing = ref(false)
-const display = ref<HTMLCanvasElement | null>(null)
+const canvas = ref<InstanceType<typeof RetouchCanvas> | null>(null)
 
 const params = reactive<RetouchParams>({ ...ZERO_PARAMS })
 
@@ -53,6 +56,19 @@ const sliders: { key: keyof RetouchParams, label: string, icon: string }[] = [
   { key: 'slim', label: '瘦脸', icon: 'lucide:scan-face' },
   { key: 'chin', label: '去双下巴', icon: 'lucide:smile' },
 ]
+
+const brushes: { id: ManualTool, label: string, icon: string, hint: string }[] = [
+  { id: 'heal', label: '修复', icon: 'lucide:bandage', hint: '点按或涂抹痘印、斑点、细纹，用周围的皮肤填补' },
+  { id: 'erase', label: '消除', icon: 'lucide:eraser', hint: '涂抹路人、杂物、电线等，松手后用周围的背景填补' },
+  { id: 'smooth', label: '磨皮', icon: 'lucide:brush', hint: '涂抹脖子、手臂等自动识别不到的皮肤' },
+  { id: 'protect', label: '保护', icon: 'lucide:shield', hint: '涂抹不想被磨皮的地方，如头发、饰品、衣服花纹' },
+  { id: 'push', label: '推拉', icon: 'lucide:move', hint: '按住拖动推移轮廓，手动瘦脸、收下巴' },
+]
+
+const activeBrush = ref<ManualTool | null>(null)
+const brushRadius = ref(20)
+const zoom = ref<'fit' | '1' | '2'>('fit')
+let strokeId = 0
 
 const retouch = useRetouchWorker((rgba) => {
   const image = work.value
@@ -65,6 +81,11 @@ const retouch = useRetouchWorker((rgba) => {
 function maxSide() {
   return window.innerWidth < 768 ? 1600 : 2560
 }
+
+const brushRange = computed(() => {
+  const side = work.value ? Math.min(work.value.width, work.value.height) : 1000
+  return { min: 2, max: Math.max(10, Math.round(side * 0.15)) }
+})
 
 async function onFiles(files: File[]) {
   const file = files[0]
@@ -83,27 +104,31 @@ async function onFiles(files: File[]) {
     return
   }
   const size = fitSize(bitmap.width, bitmap.height, maxSide(), maxSide())
-  const canvas = document.createElement('canvas')
-  canvas.width = size.width
-  canvas.height = size.height
-  const ctx = canvas.getContext('2d', { willReadFrequently: true })!
+  const source = document.createElement('canvas')
+  source.width = size.width
+  source.height = size.height
+  const ctx = source.getContext('2d', { willReadFrequently: true })!
   ctx.imageSmoothingQuality = 'high'
   ctx.drawImage(bitmap, 0, 0, size.width, size.height)
   bitmap.close()
   const original = ctx.getImageData(0, 0, size.width, size.height)
 
   retouch.dispose()
+  workerReady.value = false
   Object.assign(params, ZERO_PARAMS)
+  activeBrush.value = null
+  zoom.value = 'fit'
+  brushRadius.value = Math.max(4, Math.round(Math.min(size.width, size.height) * 0.02))
   work.value = { name: file.name || 'photo', ...size, original }
   result.value = null
   faces.value = []
   await nextTick()
   draw()
-  await runDetection(canvas)
-  canvas.width = 0
+  await runDetection(source)
+  source.width = 0
 }
 
-/** 识别人脸（用缩小的副本识别，关键点是归一化坐标），然后交给后台线程预处理 */
+/** 识别人脸，然后交给后台线程预处理；识别失败也能继续使用画笔 */
 async function runDetection(source: HTMLCanvasElement) {
   const image = work.value
   if (!image) return
@@ -119,21 +144,16 @@ async function runDetection(source: HTMLCanvasElement) {
   }
   catch {
     // 错误信息由 useFaceLandmarker 记录并显示
-    return
+    faces.value = []
   }
   finally {
     detecting.value = false
   }
-  if (!faces.value.length) return
-  preparing.value = true
+  if (work.value !== image) return
   const points = faces.value.map(face => face.map(p => ({ x: p.x, y: p.y })))
   await retouch.start(image.width, image.height, image.original.data.slice(), points)
-  preparing.value = false
-  applyPreset()
-}
-
-function applyPreset() {
-  Object.assign(params, BEAUTY_PRESET)
+  workerReady.value = true
+  if (faces.value.length) Object.assign(params, BEAUTY_PRESET)
 }
 
 function resetParams() {
@@ -141,21 +161,15 @@ function resetParams() {
 }
 
 watch(params, () => {
-  if (work.value && faces.value.length && !preparing.value) retouch.render(params)
+  if (workerReady.value) retouch.render(params)
 }, { deep: true })
 
-/** 绘制到显示画布：对比时显示原图 */
+/** 绘制到画布：对比时显示原图，可叠加识别区域 */
 function draw() {
-  const canvas = display.value
   const image = work.value
-  if (!canvas || !image) return
-  if (canvas.width !== image.width || canvas.height !== image.height) {
-    canvas.width = image.width
-    canvas.height = image.height
-  }
-  const ctx = canvas.getContext('2d')!
-  ctx.putImageData(comparing.value || !result.value ? image.original : result.value, 0, 0)
-  if (showLandmarks.value && !comparing.value) drawLandmarks(ctx, image)
+  if (!image || !canvas.value) return
+  const source = comparing.value || !result.value ? image.original : result.value
+  canvas.value.draw(source, showLandmarks.value && !comparing.value ? ctx => drawLandmarks(ctx, image) : undefined)
 }
 
 /** 调试用：画出识别到的人脸区域 */
@@ -185,33 +199,77 @@ function drawLandmarks(ctx: CanvasRenderingContext2D, image: WorkImage) {
 
 watch([showLandmarks, comparing], draw)
 
+// 画笔
+let liveStroke = 0
+function onStrokeMove(points: Point[]) {
+  if (!activeBrush.value || !workerReady.value) return
+  // 推拉画笔：拖动中不断更新同一笔，实时看到效果
+  if (!liveStroke) liveStroke = ++strokeId
+  retouch.stroke(liveStroke, activeBrush.value, points, brushRadius.value)
+}
+
+function onStrokeEnd(points: Point[]) {
+  if (!activeBrush.value || !workerReady.value || !points.length) return
+  const id = liveStroke || ++strokeId
+  liveStroke = 0
+  retouch.stroke(id, activeBrush.value, points, brushRadius.value)
+}
+
+function toggleBrush(id: ManualTool) {
+  activeBrush.value = activeBrush.value === id ? null : id
+}
+
+const activeBrushHint = computed(() => brushes.find(b => b.id === activeBrush.value)?.hint ?? '')
+
+/** Ctrl+Z 撤销，Ctrl+Y / Ctrl+Shift+Z 重做，Esc 退出画笔 */
+function onKeydown(e: KeyboardEvent) {
+  if (!workerReady.value) return
+  const target = e.target as HTMLElement | null
+  if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') && (target as HTMLInputElement).type !== 'range') return
+  const key = e.key.toLowerCase()
+  if ((e.ctrlKey || e.metaKey) && key === 'z' && !e.shiftKey) {
+    e.preventDefault()
+    if (retouch.canUndo.value) retouch.undo()
+  }
+  else if ((e.ctrlKey || e.metaKey) && (key === 'y' || (key === 'z' && e.shiftKey))) {
+    e.preventDefault()
+    if (retouch.canRedo.value) retouch.redo()
+  }
+  else if (key === 'escape') {
+    activeBrush.value = null
+  }
+}
+
+onMounted(() => window.addEventListener('keydown', onKeydown))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
+
 const statusText = computed(() => {
   if (loaderStage.value === 'downloading') {
     return `正在下载 AI 模型（首次使用需下载，之后会缓存）${formatBytes(loadedBytes.value)} / 约 ${formatBytes(MODEL_TOTAL_BYTES)}`
   }
   if (loaderStage.value === 'initializing') return '正在初始化 AI 模型…'
-  if (loaderStage.value === 'error') return `AI 模型加载失败：${errorMessage.value}`
   if (detecting.value) return '正在识别人脸…'
-  if (preparing.value) return '正在分析皮肤区域…'
+  if (work.value && !workerReady.value) return '正在分析皮肤区域…'
   if (retouch.error.value) return `处理出错：${retouch.error.value}`
+  if (loaderStage.value === 'error') return `AI 模型加载失败（${errorMessage.value}），仍可使用下方画笔`
   if (!work.value) return ''
   return faces.value.length
     ? `识别到 ${faces.value.length} 张人脸`
-    : '没有识别到人脸，可以换一张正脸清晰的照片'
+    : '没有识别到人脸，美颜滑杆不可用，仍可使用画笔修图'
 })
 
-const ready = computed(() => faces.value.length > 0 && !preparing.value && !detecting.value)
+const slidersEnabled = computed(() => workerReady.value && faces.value.length > 0)
 
 async function exportImage(type: 'image/jpeg' | 'image/png') {
   const image = work.value
   if (!image) return
   // 用离屏画布导出，不受对比、调试线条影响
-  const canvas = document.createElement('canvas')
-  canvas.width = image.width
-  canvas.height = image.height
-  canvas.getContext('2d')!.putImageData(result.value ?? image.original, 0, 0)
-  const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, type, 0.92))
-  canvas.width = 0
+  const out = document.createElement('canvas')
+  out.width = image.width
+  out.height = image.height
+  out.getContext('2d')!.putImageData(result.value ?? image.original, 0, 0)
+  const blob = await new Promise<Blob | null>(resolve => out.toBlob(resolve, type, 0.92))
+  out.width = 0
   if (!blob) {
     show('导出失败', 'error')
     return
@@ -222,15 +280,24 @@ async function exportImage(type: 'image/jpeg' | 'image/png') {
 
 function reset() {
   retouch.dispose()
+  workerReady.value = false
   work.value = null
   result.value = null
   faces.value = []
+  activeBrush.value = null
   Object.assign(params, ZERO_PARAMS)
 }
 
+const zoomOptions: { value: 'fit' | '1' | '2', label: string }[] = [
+  { value: 'fit', label: '适应' },
+  { value: '1', label: '100%' },
+  { value: '2', label: '200%' },
+]
+
 const tips = [
-  '首次使用需要下载约 17 MB 的 AI 模型，之后浏览器会缓存，再次打开很快。',
-  '识别到人脸后会自动应用「一键美颜」，可以再用滑杆分别调整；按住「对比」查看原图。',
+  '首次使用需要下载约 17 MB 的 AI 模型，之后浏览器会缓存。识别到人脸后自动应用「一键美颜」，可用滑杆分别调整。',
+  '滑杆处理不到的地方用画笔：「修复」去痘印斑点，「消除」去路人杂物，「磨皮」补涂脖子，「保护」避开头发饰品，「推拉」手动调整轮廓。支持 Ctrl+Z 撤销。',
+  '修细节时可以放大到 100% 或 200%；按住「对比」查看原图。',
   '照片只在你的浏览器里处理，不会上传到任何服务器。正脸、光线均匀、人脸较大的照片效果最好。',
 ]
 </script>
@@ -251,20 +318,67 @@ const tips = [
       class="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_19rem]"
     >
       <!-- 画布 -->
-      <div class="relative flex min-h-80 items-center justify-center overflow-hidden rounded-xl border border-line bg-surface-2 p-2">
-        <canvas
-          ref="display"
-          class="max-h-[75vh] max-w-full object-contain"
-        />
-        <span
-          v-if="comparing"
-          class="absolute top-3 left-3 rounded bg-black/60 px-2 py-0.5 text-xs text-white"
-        >原图</span>
-        <Icon
-          v-if="retouch.busy.value"
-          name="lucide:loader-circle"
-          class="absolute top-3 right-3 size-5 animate-spin text-white drop-shadow"
-        />
+      <div class="min-w-0 space-y-2">
+        <RetouchCanvas
+          ref="canvas"
+          :width="work.width"
+          :height="work.height"
+          :tool="workerReady ? activeBrush : null"
+          :radius="brushRadius"
+          :zoom="zoom === 'fit' ? 'fit' : Number(zoom)"
+          @stroke-move="onStrokeMove"
+          @stroke-end="onStrokeEnd"
+        >
+          <span
+            v-if="comparing"
+            class="absolute top-3 left-3 rounded bg-black/60 px-2 py-0.5 text-xs text-white"
+          >原图</span>
+          <span
+            v-if="retouch.busy.value"
+            class="absolute top-3 right-3 flex items-center gap-1 rounded bg-black/60 px-2 py-0.5 text-xs text-white"
+          >
+            <Icon
+              name="lucide:loader-circle"
+              class="size-3.5 animate-spin"
+            />
+            处理中
+          </span>
+        </RetouchCanvas>
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <SegmentedControl
+            v-model="zoom"
+            :options="zoomOptions"
+            group-label="缩放"
+          />
+          <div class="flex gap-1">
+            <button
+              type="button"
+              class="inline-flex h-9 items-center gap-1 rounded-lg border border-line bg-surface px-3 text-sm transition hover:border-primary hover:text-primary disabled:pointer-events-none disabled:opacity-40"
+              :disabled="!retouch.canUndo.value"
+              title="撤销（Ctrl+Z）"
+              @click="retouch.undo()"
+            >
+              <Icon
+                name="lucide:undo-2"
+                class="size-4"
+              />
+              撤销
+            </button>
+            <button
+              type="button"
+              class="inline-flex h-9 items-center gap-1 rounded-lg border border-line bg-surface px-3 text-sm transition hover:border-primary hover:text-primary disabled:pointer-events-none disabled:opacity-40"
+              :disabled="!retouch.canRedo.value"
+              title="重做（Ctrl+Y）"
+              @click="retouch.redo()"
+            >
+              <Icon
+                name="lucide:redo-2"
+                class="size-4"
+              />
+              重做
+            </button>
+          </div>
+        </div>
       </div>
 
       <!-- 面板 -->
@@ -272,10 +386,10 @@ const tips = [
         <div class="rounded-xl border border-line bg-surface p-4 text-sm">
           <p
             class="flex items-start gap-1.5"
-            :class="loaderStage === 'error' || retouch.error.value ? 'text-red-600 dark:text-red-400' : 'text-muted'"
+            :class="retouch.error.value ? 'text-red-600 dark:text-red-400' : 'text-muted'"
           >
             <Icon
-              v-if="loaderStage === 'downloading' || loaderStage === 'initializing' || detecting || preparing"
+              v-if="loaderStage === 'downloading' || loaderStage === 'initializing' || detecting || (work && !workerReady)"
               name="lucide:loader-circle"
               class="mt-0.5 size-4 shrink-0 animate-spin"
             />
@@ -288,22 +402,22 @@ const tips = [
           </p>
           <p class="mt-2 text-xs text-muted">
             {{ work.width }} × {{ work.height }} px
-            <template v-if="ready && retouch.lastMs.value">
+            <template v-if="workerReady && retouch.lastMs.value">
               · 处理用时 {{ retouch.lastMs.value }} ms
             </template>
           </p>
         </div>
 
-        <!-- 美颜参数 -->
+        <!-- 自动美颜 -->
         <div
           class="space-y-4 rounded-xl border border-line bg-surface p-4"
-          :class="{ 'pointer-events-none opacity-50': !ready }"
+          :class="{ 'pointer-events-none opacity-50': !slidersEnabled }"
         >
           <div class="flex gap-2">
             <button
               type="button"
               class="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary text-sm text-primary-fg transition hover:opacity-90"
-              @click="applyPreset"
+              @click="Object.assign(params, BEAUTY_PRESET)"
             >
               <Icon
                 name="lucide:wand-sparkles"
@@ -344,11 +458,59 @@ const tips = [
             >
           </label>
           <p
-            v-if="params.blemish > 0 && ready"
+            v-if="params.blemish > 0 && slidersEnabled"
             class="text-xs text-muted"
           >
             已自动修补 {{ retouch.spots.value }} 处斑点 / 痘印
           </p>
+        </div>
+
+        <!-- 画笔 -->
+        <div
+          class="space-y-3 rounded-xl border border-line bg-surface p-4"
+          :class="{ 'pointer-events-none opacity-50': !workerReady }"
+        >
+          <p class="text-sm font-medium">
+            画笔
+          </p>
+          <div class="grid grid-cols-5 gap-1.5">
+            <button
+              v-for="brush in brushes"
+              :key="brush.id"
+              type="button"
+              class="flex flex-col items-center gap-1 rounded-lg border py-2 text-xs transition"
+              :class="activeBrush === brush.id ? 'border-primary bg-primary/10 text-primary' : 'border-line text-muted hover:border-primary/50 hover:text-fg'"
+              :aria-pressed="activeBrush === brush.id"
+              :title="brush.hint"
+              @click="toggleBrush(brush.id)"
+            >
+              <Icon
+                :name="brush.icon"
+                class="size-4"
+              />
+              {{ brush.label }}
+            </button>
+          </div>
+          <p
+            v-if="activeBrushHint"
+            class="text-xs text-muted"
+          >
+            {{ activeBrushHint }}（Esc 退出画笔）
+          </p>
+          <label class="block">
+            <span class="mb-1 flex items-center justify-between text-sm">
+              画笔大小
+              <span class="text-xs text-muted tabular-nums">{{ brushRadius }} px</span>
+            </span>
+            <input
+              v-model.number="brushRadius"
+              type="range"
+              :min="brushRange.min"
+              :max="brushRange.max"
+              step="1"
+              class="w-full accent-primary"
+            >
+          </label>
         </div>
 
         <!-- 查看与导出 -->

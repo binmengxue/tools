@@ -27,7 +27,9 @@ import {
   WRINKLE_REGIONS,
 } from './regions'
 import type { Point } from './regions'
-import { applyWarp, chinControls, slimFaceControls } from './warp'
+import { applyMaskOps, pushSequence } from './manual'
+import type { ManualOp } from './manual'
+import { applyWarp, applyWarpSequence, chinControls, slimFaceControls } from './warp'
 import type { WarpControl } from './warp'
 
 /** 各项力度，0 ~ 100 */
@@ -179,7 +181,11 @@ export function faceWarpControls(preps: FacePrep[], params: RetouchParams): Warp
 }
 
 /**
- * 处理整张图片：在 base 的副本上逐张脸做皮肤处理，再统一做一次变形。
+ * 处理整张图片：
+ * 1. 在 base（已贴好修复 / 消除补丁）的副本上逐张脸做皮肤处理
+ * 2. 磨皮画笔、保护画笔
+ * 3. 瘦脸、去双下巴的自动变形
+ * 4. 推拉画笔（按顺序逐步变形）
  * 返回新的 RGBA 数据与修补的斑点总数。
  */
 export function renderRetouch(
@@ -188,6 +194,7 @@ export function renderRetouch(
   height: number,
   preps: FacePrep[],
   params: RetouchParams,
+  manualOps: ManualOp[] = [],
 ): { rgba: Uint8ClampedArray, spots: number } {
   let out: Uint8ClampedArray = base.slice()
   let spots = 0
@@ -197,7 +204,10 @@ export function renderRetouch(
     spots += retouchSkin(planes, prep, params)
     writePlanes(out, width, prep.rect, planes)
   }
+  applyMaskOps(out, base, width, height, manualOps)
   const controls = faceWarpControls(preps, params)
   if (controls.length) out = applyWarp(out, width, height, controls)
+  const pushes = pushSequence(manualOps)
+  if (pushes.length) applyWarpSequence(out, width, height, pushes)
   return { rgba: out, spots }
 }
