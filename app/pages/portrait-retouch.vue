@@ -50,6 +50,8 @@ const sliders: { key: keyof RetouchParams, label: string, icon: string }[] = [
   { key: 'smooth', label: '磨皮', icon: 'lucide:sparkles' },
   { key: 'blemish', label: '祛斑祛痘', icon: 'lucide:bandage' },
   { key: 'wrinkle', label: '去皱 / 淡化眼袋', icon: 'lucide:waves' },
+  { key: 'slim', label: '瘦脸', icon: 'lucide:scan-face' },
+  { key: 'chin', label: '去双下巴', icon: 'lucide:smile' },
 ]
 
 const retouch = useRetouchWorker((rgba) => {
@@ -131,9 +133,7 @@ async function runDetection(source: HTMLCanvasElement) {
 }
 
 function applyPreset() {
-  params.smooth = BEAUTY_PRESET.smooth
-  params.blemish = BEAUTY_PRESET.blemish
-  params.wrinkle = BEAUTY_PRESET.wrinkle
+  Object.assign(params, BEAUTY_PRESET)
 }
 
 function resetParams() {

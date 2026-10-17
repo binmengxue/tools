@@ -110,3 +110,26 @@ describe('renderRetouch', () => {
     expect(rgba[(100 * W + 100) * 4]!).toBeGreaterThan(200)
   })
 })
+
+describe('瘦脸与去双下巴', () => {
+  it('瘦脸会改变脸部边缘附近的像素，远处不变', () => {
+    // 白色背景上画一张肤色椭圆脸，瘦脸后边缘处的像素会变化
+    const base = new Uint8ClampedArray(W * H * 4).fill(255)
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        if (((x - 100) / 50) ** 2 + ((y - 108) / 67) ** 2 <= 1) {
+          const i = (y * W + x) * 4
+          base[i] = 220
+          base[i + 1] = 170
+          base[i + 2] = 140
+        }
+      }
+    }
+    const prep = prepareFace(base, W, H, fakeFace())
+    const { rgba } = renderRetouch(base, W, H, [prep], { ...ZERO_PARAMS, slim: 100 })
+    let changed = 0
+    for (let i = 0; i < base.length; i += 4) if (rgba[i] !== base[i]) changed++
+    expect(changed).toBeGreaterThan(50)
+    expect(rgba[(2 * W + 2) * 4]).toBe(255)
+  })
+})
