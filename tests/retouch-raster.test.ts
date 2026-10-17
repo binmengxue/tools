@@ -206,6 +206,40 @@ describe('斑点', () => {
     expect(Math.abs(p.r[30 * w + 30]! - 180)).toBeLessThan(6)
     expect(p.r[2 * w + 2]).toBe(180)
   })
+
+  it('大块涂抹：中间也被修补（多尺度），不会留下没修补的条带', () => {
+    const w = 160
+    const p = solid(w, w, 180)
+    const mask = new Float32Array(w * w)
+    // 宽 100、高 60 的暗块，修补尺度只有 4
+    for (let y = 50; y < 110; y++) {
+      for (let x = 30; x < 130; x++) {
+        p.r[y * w + x] = 110
+        mask[y * w + x] = 1
+      }
+    }
+    healMask(p, mask, 4)
+    expect(Math.abs(p.r[80 * w + 80]! - 180)).toBeLessThan(6)
+    expect(Math.abs(p.r[52 * w + 80]! - 180)).toBeLessThan(6)
+  })
+
+  it('保留细纹理：修补后亮度接近周围，原有的细小起伏还在', () => {
+    const w = 120
+    const p = solid(w, w, 180)
+    const mask = new Float32Array(w * w)
+    // 暗块上有棋盘格细纹理（±10）
+    for (let y = 30; y < 90; y++) {
+      for (let x = 30; x < 90; x++) {
+        p.r[y * w + x] = 130 + ((x + y) % 2 ? 10 : -10)
+        mask[y * w + x] = 1
+      }
+    }
+    healMask(p, mask, 4, 1)
+    const a = p.r[60 * w + 60]!
+    const b = p.r[60 * w + 61]!
+    expect(Math.abs((a + b) / 2 - 180)).toBeLessThan(8)
+    expect(Math.abs(a - b)).toBeGreaterThan(10)
+  })
 })
 
 describe('加速版本', () => {

@@ -41,6 +41,14 @@ describe('补丁', () => {
     expect(out[(50 * W + 60) * 4]!).toBeGreaterThan(180)
   })
 
+  it('修复画笔：大笔刷点在小斑点上，斑点也被去掉（保留的细纹理不包括斑点）', () => {
+    const src = scene()
+    const { rect, rgba } = healPatch(src, W, H, { points: [{ x: 60, y: 50 }], radius: 24 })
+    const out = src.slice()
+    pasteRgba(out, W, rect, rgba)
+    expect(out[(50 * W + 60) * 4]!).toBeGreaterThan(170)
+  })
+
   it('消除画笔：深色方块被周围纹理填补，区域外不变', () => {
     const src = scene()
     const { rect, rgba } = erasePatch(src, W, H, stroke, 3)

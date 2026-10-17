@@ -42,11 +42,11 @@ export function pasteRgba(rgba: Uint8ClampedArray, width: number, rect: Rect, pa
   }
 }
 
-/** 修复画笔：用笔画周围的皮肤颜色填补笔画区域 */
+/** 修复画笔：用笔画周围的皮肤颜色填补笔画区域，保留原来的细纹理（毛孔），大块涂抹也不会糊成一片 */
 export function healPatch(base: Uint8ClampedArray, width: number, height: number, stroke: Stroke): { rect: Rect, rgba: Uint8ClampedArray } {
   const rect = strokeBounds(stroke, width, height, stroke.radius * 3)
   const planes = extractPlanes(base, width, rect)
-  healMask(planes, strokeMask(stroke, rect, 0.6), Math.max(2, stroke.radius * 0.8))
+  healMask(planes, strokeMask(stroke, rect, 0.6), Math.max(2, stroke.radius * 0.8), 0.9)
   // 局部区域：透明度取原图，RGB 取修补结果
   const rgba = cropRgba(base, width, rect)
   for (let i = 0; i < rect.width * rect.height; i++) {

@@ -95,25 +95,74 @@ export function detectSpots(lum: Float32Array, skin: Float32Array, width: number
 
 /**
  * 修补遮罩内的区域（直接修改 planes）。
- * 先用遮罩外的像素做归一化卷积得到填充色，再按羽化后的遮罩混合，边缘自然过渡。
+ *
+ * 用遮罩外的像素做归一化卷积得到填充色，再按羽化后的遮罩混合，边缘自然过渡。
+ * 尺度从 sigma 开始逐级加倍，直到遮罩最里面也能取到足够的周围像素：
+ * 大块涂抹时，中间部分用大尺度的颜色，靠近边缘用小尺度的颜色。
+ * 只用一个尺度时，离边缘超过约 3 × sigma 的地方取不到参考像素，会留下没修补的条带。
+ *
+ * texture（0 ~ 1）：叠回原图细纹理的比例，大块修补后仍保留毛孔质感，不会糊成一片。
+ * 细纹理的幅度有上限：毛孔起伏很小会保留，斑点、痘印对比强，超出部分被去掉。
  */
-export function healMask(planes: Planes, mask: Float32Array, sigma: number): void {
+export function healMask(planes: Planes, mask: Float32Array, sigma: number, texture = 0): void {
   const { width, height } = planes
   const outside = new Float32Array(mask.length)
-  for (let i = 0; i < mask.length; i++) outside[i] = mask[i]! > 0.01 ? 0 : 1
-  const weight = gaussianBlur(outside, width, height, sigma)
+  let inside = 0
+  for (let i = 0; i < mask.length; i++) {
+    if (mask[i]! > 0.01) inside++
+    else outside[i] = 1
+  }
+  if (!inside || inside === mask.length) return
   const soft = feather(mask, width, height, Math.max(1, sigma * 0.35))
+
+  // 由细到粗求各尺度的权重，直到遮罩内处处有足够的参考像素
+  const MIN_WEIGHT = 0.2
+  const sigmas: number[] = []
+  const weights: Float32Array[] = []
+  const limit = Math.max(width, height)
+  for (let s = sigma; ; s *= 2) {
+    const weight = gaussianBlur(outside, width, height, s)
+    sigmas.push(s)
+    weights.push(weight)
+    let enough = true
+    for (let i = 0; i < mask.length; i++) {
+      if (mask[i]! > 0.01 && weight[i]! < MIN_WEIGHT) {
+        enough = false
+        break
+      }
+    }
+    if (enough || s * 2 > limit) break
+  }
+
+  const detailSigma = Math.min(4, Math.max(1, sigma * 0.15))
+  const DETAIL_LIMIT = 12
   for (const channel of [planes.r, planes.g, planes.b]) {
     const masked = new Float32Array(channel.length)
     for (let i = 0; i < channel.length; i++) masked[i] = channel[i]! * outside[i]!
-    const blurred = gaussianBlur(masked, width, height, sigma)
+    // 由粗到细合成填充色：每一级在权重足够的地方覆盖上一级
+    let fill: Float32Array | null = null
+    for (let k = sigmas.length - 1; k >= 0; k--) {
+      const blurred = gaussianBlur(masked, width, height, sigmas[k]!)
+      const weight = weights[k]!
+      if (!fill) {
+        fill = new Float32Array(channel.length)
+        for (let i = 0; i < fill.length; i++) fill[i] = weight[i]! > 1e-6 ? blurred[i]! / weight[i]! : channel[i]!
+        continue
+      }
+      for (let i = 0; i < fill.length; i++) {
+        const w = weight[i]!
+        if (w <= 1e-6) continue
+        const alpha = Math.min(1, w / MIN_WEIGHT)
+        fill[i] = fill[i]! + (blurred[i]! / w - fill[i]!) * alpha
+      }
+    }
+    const detail = texture > 0 ? gaussianBlur(channel, width, height, detailSigma) : null
     for (let i = 0; i < channel.length; i++) {
       const m = Math.min(1, Math.max(soft[i]!, mask[i]!))
       if (m <= 0.001) continue
-      const w = weight[i]!
-      if (w < 1e-3) continue // 周围没有可参考的像素
-      const fill = blurred[i]! / w
-      channel[i] = channel[i]! + (fill - channel[i]!) * m
+      const fine = detail ? Math.max(-DETAIL_LIMIT, Math.min(DETAIL_LIMIT, channel[i]! - detail[i]!)) : 0
+      const target = fill![i]! + fine * texture
+      channel[i] = channel[i]! + (target - channel[i]!) * m
     }
   }
 }
