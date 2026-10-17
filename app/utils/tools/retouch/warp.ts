@@ -1,5 +1,5 @@
 /**
- * 局部变形（液化「向前推」）：瘦脸、去双下巴、推拉画笔都用它（纯函数）。
+ * 局部变形（液化「向前推」）：瘦脸、推拉画笔用它；去双下巴的位移场见 chin.ts（纯函数）。
  *
  * 每个控制点把半径 radius 内的内容沿 (dx, dy) 推动，衰减函数为 (1 - (d/r)²)²：
  * 中心推动最多、到边缘平滑降为 0，半径外完全不动。
@@ -116,15 +116,34 @@ function sample(src: Uint8ClampedArray, width: number, height: number, x: number
   }
 }
 
-/**
- * 按控制点变形，返回新的 RGBA 数据（只重新计算受影响的矩形区域，其余直接复制）。
- */
+/** 两个矩形的外接矩形（任一为 null 时返回另一个） */
+export function unionRect(a: Rect | null, b: Rect | null): Rect | null {
+  if (!a) return b
+  if (!b) return a
+  const x = Math.min(a.x, b.x)
+  const y = Math.min(a.y, b.y)
+  return { x, y, width: Math.max(a.x + a.width, b.x + b.width) - x, height: Math.max(a.y + a.height, b.y + b.height) - y }
+}
+
+/** 按控制点变形，返回新的 RGBA 数据（只重新计算受影响的矩形区域，其余直接复制） */
 export function applyWarp(src: Uint8ClampedArray, width: number, height: number, controls: WarpControl[]): Uint8ClampedArray {
+  return applyDisplacement(src, width, height, controlsBounds(controls, width, height), (x, y) => displacementAt(x, y, controls))
+}
+
+/**
+ * 按任意位移场变形，返回新的 RGBA 数据：rect 内的像素从「该点 - 位移」处取色，rect 外直接复制。
+ * 位移场很平滑：先在步长 GRID 的网格上计算，再双线性插值，计算量约为逐像素的 1/16。
+ */
+export function applyDisplacement(
+  src: Uint8ClampedArray,
+  width: number,
+  height: number,
+  rect: Rect | null,
+  field: (x: number, y: number) => Point,
+): Uint8ClampedArray {
   const out = src.slice()
-  const rect = controlsBounds(controls, width, height)
   if (!rect) return out
   const px = new Float32Array(4)
-  // 位移场很平滑：先在步长 GRID 的网格上计算，再双线性插值，计算量约为逐像素的 1/16
   const GRID = 4
   const gw = Math.ceil(rect.width / GRID) + 2
   const gh = Math.ceil(rect.height / GRID) + 2
@@ -132,7 +151,7 @@ export function applyWarp(src: Uint8ClampedArray, width: number, height: number,
   const gy = new Float32Array(gw * gh)
   for (let j = 0; j < gh; j++) {
     for (let i = 0; i < gw; i++) {
-      const d = displacementAt(rect.x + i * GRID + 0.5, rect.y + j * GRID + 0.5, controls)
+      const d = field(rect.x + i * GRID + 0.5, rect.y + j * GRID + 0.5)
       gx[j * gw + i] = d.x
       gy[j * gw + i] = d.y
     }
@@ -149,10 +168,9 @@ export function applyWarp(src: Uint8ClampedArray, width: number, height: number,
       const b = a + gw
       const dx = (gx[a]! * (1 - tx) + gx[a + 1]! * tx) * (1 - ty) + (gx[b]! * (1 - tx) + gx[b + 1]! * tx) * ty
       const dy = (gy[a]! * (1 - tx) + gy[a + 1]! * tx) * (1 - ty) + (gy[b]! * (1 - tx) + gy[b + 1]! * tx) * ty
-      const d = { x: dx, y: dy }
-      if (Math.abs(d.x) < 1e-3 && Math.abs(d.y) < 1e-3) continue
+      if (Math.abs(dx) < 1e-3 && Math.abs(dy) < 1e-3) continue
       // 反向映射：此处的内容来自「往回推」的位置
-      sample(src, width, height, x - d.x, y - d.y, px)
+      sample(src, width, height, x - dx, y - dy, px)
       const i = (y * width + x) * 4
       out[i] = px[0]!
       out[i + 1] = px[1]!
@@ -232,39 +250,5 @@ export function slimFaceControls(points: Point[], faceWidth: number, amount: num
   return controls
 }
 
-/**
- * 去双下巴：下巴下方的软组织向上、向内收紧。
- * 控制点放在下巴尖和两侧下颌下方。
- */
-export function chinControls(points: Point[], faceWidth: number, amount: number): WarpControl[] {
-  if (amount <= 0) return []
-  // 以鼻尖为中心，下颌线上每个点的「向外」方向（大致朝下、朝外）
-  const center = points[1]!
-  const controls: WarpControl[] = []
-  LOWER_JAW.forEach((index, k) => {
-    const p = points[index]!
-    const vx = p.x - center.x
-    const vy = p.y - center.y
-    const len = Math.hypot(vx, vy) || 1
-    const nx = vx / len
-    const ny = vy / len
-    const weight = LOWER_JAW_WEIGHTS[k]!
-    const push = faceWidth * 0.06 * amount * weight
-    // 控制点放在下颌线外侧（下巴下方的软组织处），把它往下颌线方向收
-    controls.push({
-      x: p.x + nx * faceWidth * 0.07,
-      y: p.y + ny * faceWidth * 0.07,
-      dx: -nx * push,
-      dy: -ny * push,
-      radius: faceWidth * 0.12,
-      // 背后是脖子：拉伸分散到更长的距离，发丝、颈纹不会被拉成长条
-      backRadius: faceWidth * 0.32,
-    })
-  })
-  return controls
-}
-
 /** 下颌线下缘：从右侧下颌角经下巴尖到左侧下颌角 */
 export const LOWER_JAW = [172, 136, 150, 149, 176, 148, 152, 377, 400, 378, 379, 365, 397]
-/** 越靠近下巴尖收得越多（双下巴主要在下巴正下方） */
-const LOWER_JAW_WEIGHTS = [0.25, 0.45, 0.65, 0.85, 1, 1, 1, 1, 1, 0.85, 0.65, 0.45, 0.25]

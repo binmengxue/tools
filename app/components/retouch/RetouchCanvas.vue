@@ -38,6 +38,7 @@ const PREVIEW_COLOR: Record<ManualTool, string> = {
   smooth: 'rgba(59, 130, 246, 0.4)',
   protect: 'rgba(245, 158, 11, 0.45)',
   push: 'rgba(255, 255, 255, 0)',
+  chin: 'rgba(168, 85, 247, 0.4)',
 }
 
 function sizeCanvases() {

@@ -31,8 +31,8 @@ import {
 import type { Point } from './regions'
 import { applyMaskOps, pushSequence } from './manual'
 import type { ManualOp } from './manual'
-import { applyWarp, applyWarpSequence, chinControls, slimFaceControls } from './warp'
-import type { WarpControl } from './warp'
+import { autoChinLift, chinLiftAt, chinLiftBounds, jawFrame, softenUnderChin } from './chin'
+import { applyDisplacement, applyWarpSequence, controlsBounds, displacementAt, slimFaceControls, unionRect } from './warp'
 
 /** 各项力度，0 ~ 100 */
 export interface RetouchParams {
@@ -171,20 +171,12 @@ export function retouchSkin(planes: Planes, prep: FacePrep, params: RetouchParam
   return spotCount
 }
 
-/** 所有人脸的自动变形控制点（瘦脸 + 去双下巴） */
-export function faceWarpControls(preps: FacePrep[], params: RetouchParams): WarpControl[] {
-  return preps.flatMap(prep => [
-    ...slimFaceControls(prep.points, prep.faceWidth, params.slim / 100),
-    ...chinControls(prep.points, prep.faceWidth, params.chin / 100),
-  ])
-}
-
 /**
  * 处理整张图片：
  * 1. 在 base（已贴好修复 / 消除补丁）的副本上逐张脸做皮肤处理
  * 2. 磨皮画笔、保护画笔
- * 3. 瘦脸、去双下巴的自动变形
- * 4. 推拉画笔（按顺序逐步变形）
+ * 3. 去双下巴（淡化褶皱 + 提拉）与瘦脸的自动变形
+ * 4. 收下巴画笔、推拉画笔（按顺序逐步变形）
  * 返回新的 RGBA 数据与修补的斑点总数。
  */
 export function renderRetouch(
@@ -217,7 +209,7 @@ export function renderSkin(base: Uint8ClampedArray, width: number, preps: FacePr
   return { rgba: out, spots }
 }
 
-/** 收尾阶段：磨皮 / 保护画笔、自动变形、推拉画笔（skin 为皮肤阶段结果，不会被修改） */
+/** 收尾阶段：磨皮 / 保护画笔、去双下巴、瘦脸、收下巴画笔、推拉画笔（skin 为皮肤阶段结果，不会被修改） */
 export function finishRender(
   skin: Uint8ClampedArray,
   base: Uint8ClampedArray,
@@ -229,8 +221,38 @@ export function finishRender(
 ): Uint8ClampedArray {
   let out: Uint8ClampedArray = skin.slice()
   applyMaskOps(out, base, width, height, manualOps)
-  const controls = faceWarpControls(preps, params)
-  if (controls.length) out = applyWarp(out, width, height, controls)
+
+  // 去双下巴：先在原图坐标下淡化褶皱，再和瘦脸的位移相加，一次完成变形
+  const chin = params.chin / 100
+  const lifts = chin > 0
+    ? preps.map(prep => ({ prep, frame: jawFrame(prep.points), lift: autoChinLift(prep.faceWidth, chin) }))
+    : []
+  for (const { prep, frame, lift } of lifts) softenUnderChin(out, width, height, frame, lift, prep.faceWidth, chin)
+  const slim = preps.flatMap(prep => slimFaceControls(prep.points, prep.faceWidth, params.slim / 100))
+  let rect = controlsBounds(slim, width, height)
+  for (const { frame, lift } of lifts) rect = unionRect(rect, chinLiftBounds(frame, lift, width, height))
+  if (rect) {
+    out = applyDisplacement(out, width, height, rect, (x, y) => {
+      const d = slim.length ? displacementAt(x, y, slim) : { x: 0, y: 0 }
+      for (const { frame, lift } of lifts) {
+        const c = chinLiftAt(x, y, frame, lift)
+        d.x += c.x
+        d.y += c.y
+      }
+      return d
+    })
+  }
+
+  // 收下巴画笔：每一笔先淡化褶皱再提拉，多涂几次可以叠加
+  for (const op of manualOps) {
+    if (op.kind !== 'chin') continue
+    const prep = preps[op.face]
+    if (!prep) continue
+    const frame = jawFrame(prep.points)
+    softenUnderChin(out, width, height, frame, op.lift, prep.faceWidth, 0.8)
+    out = applyDisplacement(out, width, height, chinLiftBounds(frame, op.lift, width, height), (x, y) => chinLiftAt(x, y, frame, op.lift))
+  }
+
   const pushes = pushSequence(manualOps)
   if (pushes.length) applyWarpSequence(out, width, height, pushes)
   return out

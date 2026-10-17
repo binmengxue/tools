@@ -9,6 +9,7 @@ import type { RetouchParams } from '~/utils/tools/retouch/engine'
 import type { ManualTool } from '~/utils/tools/retouch/manual'
 import {
   FACE_OVAL,
+  faceWidth,
   LEFT_EYE,
   LEFT_EYEBROW,
   LEFT_UNDER_EYE,
@@ -62,15 +63,21 @@ const brushes: { id: ManualTool, label: string, icon: string, hint: string }[] =
   { id: 'erase', label: '消除', icon: 'lucide:eraser', hint: '涂抹路人、杂物、电线等，松手后用周围的背景填补' },
   { id: 'smooth', label: '磨皮', icon: 'lucide:brush', hint: '涂抹脖子、手臂等自动识别不到的皮肤' },
   { id: 'protect', label: '保护', icon: 'lucide:shield', hint: '涂抹不想被磨皮的地方，如头发、饰品、衣服花纹' },
-  { id: 'push', label: '推拉', icon: 'lucide:move', hint: '把圆圈放在轮廓边缘（如下颌线），按住往里拖动；笔刷要比要推的部位大一些' },
+  { id: 'push', label: '推拉', icon: 'lucide:move', hint: '用大笔刷，圆心放在要收的轮廓外侧，按住往里轻推；修双下巴用「收下巴」更简单' },
+  { id: 'chin', label: '收下巴', icon: 'lucide:chevrons-up', hint: '在双下巴上涂抹，松手后自动往下颌线收紧、淡化褶皱；可多涂几次加强' },
 ]
+
+/** 需要识别到人脸才能用的画笔 */
+const FACE_BRUSHES: ManualTool[] = ['chin']
 
 const activeBrush = ref<ManualTool | null>(null)
 
 /** 各画笔默认大小（占图片短边的比例）：推拉需要大笔刷才能推动轮廓，修复需要小笔刷 */
-const BRUSH_SIZE_RATIO: Record<ManualTool, number> = { heal: 0.02, erase: 0.03, smooth: 0.05, protect: 0.04, push: 0.08 }
+const BRUSH_SIZE_RATIO: Record<ManualTool, number> = { heal: 0.02, erase: 0.03, smooth: 0.05, protect: 0.04, push: 0.08, chin: 0.06 }
+/** 识别到人脸后，变形类画笔的默认大小按脸宽设置（占脸宽的比例） */
+const FACE_BRUSH_RATIO: Partial<Record<ManualTool, number>> = { push: 0.15, chin: 0.12 }
 /** 每种画笔分别记住自己的大小 */
-const brushSizes = reactive<Record<ManualTool, number>>({ heal: 20, erase: 30, smooth: 50, protect: 40, push: 80 })
+const brushSizes = reactive<Record<ManualTool, number>>({ heal: 20, erase: 30, smooth: 50, protect: 40, push: 80, chin: 60 })
 const brushRadius = computed({
   get: () => brushSizes[activeBrush.value ?? 'heal'],
   set: (value: number) => {
@@ -161,6 +168,13 @@ async function runDetection(source: HTMLCanvasElement) {
     detecting.value = false
   }
   if (work.value !== image) return
+  if (faces.value.length) {
+    // 按最大的那张脸设置变形类画笔的大小
+    const fw = Math.max(...faces.value.map(face => faceWidth(face, image.width, image.height)))
+    for (const [id, ratio] of Object.entries(FACE_BRUSH_RATIO) as [ManualTool, number][]) {
+      brushSizes[id] = Math.min(brushRange.value.max, Math.max(4, Math.round(fw * ratio)))
+    }
+  }
   const points = faces.value.map(face => face.map(p => ({ x: p.x, y: p.y })))
   await retouch.start(image.width, image.height, image.original.data.slice(), points)
   workerReady.value = true
@@ -226,7 +240,12 @@ function onStrokeEnd(points: Point[]) {
   retouch.stroke(id, activeBrush.value, points, brushRadius.value)
 }
 
+function brushDisabled(id: ManualTool) {
+  return FACE_BRUSHES.includes(id) && !faces.value.length
+}
+
 function toggleBrush(id: ManualTool) {
+  if (brushDisabled(id)) return
   activeBrush.value = activeBrush.value === id ? null : id
 }
 
@@ -307,7 +326,7 @@ const zoomOptions: { value: 'fit' | '1' | '2', label: string }[] = [
 
 const tips = [
   '首次使用需要下载约 17 MB 的 AI 模型，之后浏览器会缓存。识别到人脸后自动应用「一键美颜」，可用滑杆分别调整。',
-  '滑杆处理不到的地方用画笔：「修复」去痘印斑点，「消除」去路人杂物，「磨皮」补涂脖子，「保护」避开头发饰品，「推拉」手动调整轮廓。支持 Ctrl+Z 撤销。',
+  '滑杆处理不到的地方用画笔：「修复」去痘印斑点，「消除」去路人杂物，「磨皮」补涂脖子，「保护」避开头发饰品，「推拉」手动调整轮廓，「收下巴」涂在双下巴上自动收紧。支持 Ctrl+Z 撤销。',
   '修细节时可以放大到 100% 或 200%；按住「对比」查看原图。',
   '照片只在你的浏览器里处理，不会上传到任何服务器。正脸、光线均匀、人脸较大的照片效果最好。',
 ]
@@ -484,15 +503,16 @@ const tips = [
           <p class="text-sm font-medium">
             画笔
           </p>
-          <div class="grid grid-cols-5 gap-1.5">
+          <div class="grid grid-cols-3 gap-1.5">
             <button
               v-for="brush in brushes"
               :key="brush.id"
               type="button"
-              class="flex flex-col items-center gap-1 rounded-lg border py-2 text-xs transition"
+              class="flex flex-col items-center gap-1 rounded-lg border py-2 text-xs transition disabled:pointer-events-none disabled:opacity-40"
               :class="activeBrush === brush.id ? 'border-primary bg-primary/10 text-primary' : 'border-line text-muted hover:border-primary/50 hover:text-fg'"
               :aria-pressed="activeBrush === brush.id"
-              :title="brush.hint"
+              :disabled="brushDisabled(brush.id)"
+              :title="brushDisabled(brush.id) ? '需要识别到人脸才能使用' : brush.hint"
               @click="toggleBrush(brush.id)"
             >
               <Icon

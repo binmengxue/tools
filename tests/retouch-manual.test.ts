@@ -77,6 +77,11 @@ describe('笔画', () => {
     expect(controls.every(c => Math.hypot(c.dx, c.dy) <= 20 * 0.15 + 1e-9)).toBe(true)
     expect(controls.reduce((s, c) => s + c.dx, 0)).toBeCloseTo(15, 6)
   })
+
+  it('推拉：拖动方向背后的影响范围加长，拉伸分散开', () => {
+    const controls = pushControls({ points: [{ x: 0, y: 0 }, { x: 30, y: 0 }], radius: 20 })
+    expect(controls.every(c => c.backRadius === 44)).toBe(true)
+  })
 })
 
 describe('连续推动', () => {

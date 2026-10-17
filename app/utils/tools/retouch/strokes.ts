@@ -65,6 +65,7 @@ export function strokeMask(stroke: Stroke, rect: Rect, hardness = 0.7): Float32A
 
 /**
  * 推拉画笔：把拖动路径拆成一连串小步推动（每步不超过半径的 15%，避免撕裂）。
+ * 拖动方向背后的影响范围加长到半径的 2.2 倍，拉伸被分散开，不会留下凹坑和拖影。
  * strength 为推动比例（0 ~ 1）。
  */
 export function pushControls(stroke: Stroke, strength = 0.8): WarpControl[] {
@@ -85,6 +86,7 @@ export function pushControls(stroke: Stroke, strength = 0.8): WarpControl[] {
         dx: ((b.x - a.x) / steps) * strength,
         dy: ((b.y - a.y) / steps) * strength,
         radius,
+        backRadius: radius * 2.2,
       })
     }
   }

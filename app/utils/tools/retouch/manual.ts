@@ -3,22 +3,27 @@
  * - 修复 / 消除：落笔时计算一次，结果保存为「补丁」（矩形区域的像素），撤销、重做、调滑杆时直接贴回，不重算
  * - 磨皮画笔 / 保护：记录笔画，渲染时生成遮罩
  * - 推拉：记录一串控制点，渲染时按顺序变形
+ * - 收下巴：松手时根据涂抹位置算出提拉参数，渲染时淡化褶皱并提拉
  */
 import { healMask } from './blemish'
+import { jawFrame, liftFromStroke, locateOnJaw } from './chin'
+import type { ChinLift } from './chin'
 import { smoothSkin } from './filters'
 import { inpaint } from './inpaint'
 import { expandRect, extractPlanes, writePlanes } from './raster'
 import type { Rect } from './raster'
+import type { Point } from './regions'
 import { pushControls, strokeBounds, strokeMask } from './strokes'
 import type { Stroke } from './strokes'
 import type { WarpControl } from './warp'
 
-export type ManualTool = 'heal' | 'erase' | 'smooth' | 'protect' | 'push'
+export type ManualTool = 'heal' | 'erase' | 'smooth' | 'protect' | 'push' | 'chin'
 
 export type ManualOp
   = | { kind: 'patch', strokeId: number, rect: Rect, rgba: Uint8ClampedArray }
     | { kind: 'mask', strokeId: number, tool: 'smooth' | 'protect', stroke: Stroke }
     | { kind: 'push', strokeId: number, controls: WarpControl[] }
+    | { kind: 'chin', strokeId: number, face: number, lift: ChinLift }
 
 /** 取出图片中一个矩形区域的 RGBA */
 export function cropRgba(rgba: Uint8ClampedArray, width: number, rect: Rect): Uint8ClampedArray {
@@ -72,6 +77,32 @@ export function erasePatch(base: Uint8ClampedArray, width: number, height: numbe
 /** 推拉画笔的控制点 */
 export function pushOp(strokeId: number, stroke: Stroke): ManualOp {
   return { kind: 'push', strokeId, controls: pushControls(stroke, 1) }
+}
+
+/**
+ * 收下巴画笔：选下颌线离笔画最近的那张脸，按涂抹的范围生成提拉参数。
+ * 没有人脸，或笔画完全在脸内侧时返回 null。
+ */
+export function chinOp(strokeId: number, stroke: Stroke, faces: { points: Point[], faceWidth: number }[]): ManualOp | null {
+  if (!stroke.points.length || !faces.length) return null
+  const cx = stroke.points.reduce((sum, p) => sum + p.x, 0) / stroke.points.length
+  const cy = stroke.points.reduce((sum, p) => sum + p.y, 0) / stroke.points.length
+  let face = -1
+  let best = Infinity
+  faces.forEach((f, i) => {
+    const frame = jawFrame(f.points)
+    const pos = locateOnJaw(cx, cy, frame)
+    // 不在下颌线的角度范围内（如额头、背景）时不选这张脸
+    const d = pos.t < 0 ? Infinity : Math.abs(pos.signed)
+    if (d < best) {
+      best = d
+      face = i
+    }
+  })
+  const f = faces[face]
+  if (!f) return null
+  const lift = liftFromStroke(stroke.points, stroke.radius, jawFrame(f.points), f.faceWidth)
+  return lift ? { kind: 'chin', strokeId, face, lift } : null
 }
 
 /** 依次贴上所有补丁（原地修改） */

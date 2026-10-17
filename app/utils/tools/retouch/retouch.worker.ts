@@ -6,7 +6,7 @@ import { finishRender, prepareFace, renderSkin, skinKey, ZERO_PARAMS } from './e
 import type { FacePrep, RetouchParams } from './engine'
 import { active, canRedo, canUndo, createHistory, push, redo, replaceLast, undo } from './history'
 import type { History } from './history'
-import { applyPatches, erasePatch, healPatch, pushOp } from './manual'
+import { applyPatches, chinOp, erasePatch, healPatch, pushOp } from './manual'
 import type { ManualOp, ManualTool } from './manual'
 import type { Point } from './regions'
 import { applyWarpSequence } from './warp'
@@ -120,10 +120,10 @@ function renderWithLivePush(skin: Uint8ClampedArray, base: Uint8ClampedArray, op
   return out
 }
 
-/** 处理一笔：修复 / 消除在落笔结束时计算补丁；磨皮、保护、推拉可以在拖动中不断更新同一笔 */
+/** 处理一笔：修复 / 消除 / 收下巴在落笔结束时计算；磨皮、保护、推拉可以在拖动中不断更新同一笔 */
 function stroke(msg: Extract<WorkerRequest, { type: 'stroke' }>) {
   const s = { points: msg.points, radius: msg.radius }
-  let op: ManualOp
+  let op: ManualOp | null
   if (msg.tool === 'heal' || msg.tool === 'erase') {
     const base = patchedBase()
     const patch = msg.tool === 'heal' ? healPatch(base, width, height, s) : erasePatch(base, width, height, s, msg.strokeId)
@@ -131,6 +131,11 @@ function stroke(msg: Extract<WorkerRequest, { type: 'stroke' }>) {
   }
   else if (msg.tool === 'push') {
     op = pushOp(msg.strokeId, s)
+  }
+  else if (msg.tool === 'chin') {
+    // 没有人脸或涂在脸内侧时不产生操作
+    op = chinOp(msg.strokeId, s, preps)
+    if (!op) return
   }
   else {
     op = { kind: 'mask', strokeId: msg.strokeId, tool: msg.tool, stroke: s }

@@ -2,13 +2,11 @@ import { describe, expect, it } from 'vitest'
 import type { Point } from '../app/utils/tools/retouch/regions'
 import {
   applyWarp,
-  chinControls,
   controlsBounds,
   displacementAt,
   falloff,
   JAW_LEFT,
   JAW_RIGHT,
-  LOWER_JAW,
   slimFaceControls,
 } from '../app/utils/tools/retouch/warp'
 
@@ -88,12 +86,11 @@ function symmetricFace(): Point[] {
   return points
 }
 
-describe('瘦脸与去双下巴', () => {
+describe('瘦脸', () => {
   const face = symmetricFace()
 
   it('力度为 0 时没有控制点', () => {
     expect(slimFaceControls(face, 400, 0)).toEqual([])
-    expect(chinControls(face, 400, 0)).toEqual([])
   })
 
   it('瘦脸：两侧下颌线向中间收，左右对称', () => {
@@ -112,23 +109,6 @@ describe('瘦脸与去双下巴', () => {
     const controls = slimFaceControls(face, 400, 0.8)
     const a = displacementAt(380, 600, controls)
     const b = displacementAt(620, 600, controls)
-    expect(a.x).toBeCloseTo(-b.x, 6)
-    expect(a.y).toBeCloseTo(b.y, 6)
-  })
-
-  it('去双下巴：控制点在下颌线外侧，向下颌线方向收（向上），左右对称', () => {
-    const controls = chinControls(face, 400, 1)
-    expect(controls).toHaveLength(LOWER_JAW.length)
-    // 下巴尖（152）对应的控制点在下巴下方，向上推
-    const chin = controls[LOWER_JAW.indexOf(152)]!
-    expect(chin.y).toBeGreaterThan(800)
-    expect(chin.dy).toBeLessThan(0)
-    expect(controls.every(c => c.dy < 0)).toBe(true)
-    // 下巴正下方的位移向上
-    expect(displacementAt(500, 830, controls).y).toBeLessThan(-5)
-    // 左右对称
-    const a = displacementAt(440, 820, controls)
-    const b = displacementAt(560, 820, controls)
     expect(a.x).toBeCloseTo(-b.x, 6)
     expect(a.y).toBeCloseTo(b.y, 6)
   })
