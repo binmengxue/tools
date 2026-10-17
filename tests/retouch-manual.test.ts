@@ -80,7 +80,7 @@ describe('笔画', () => {
 })
 
 describe('连续推动', () => {
-  it('单个控制点时与 applyWarp 结果一致', () => {
+  it('单个控制点时与 applyWarp 结果几乎一致（applyWarp 用网格插值，误差很小）', () => {
     const w = 60
     const h = 60
     const src = new Uint8ClampedArray(w * h * 4)
@@ -88,7 +88,11 @@ describe('连续推动', () => {
     const control = { x: 30, y: 30, dx: 3, dy: -2, radius: 15 }
     const inPlace = src.slice()
     applyWarpSequence(inPlace, w, h, [control])
-    expect(Array.from(inPlace)).toEqual(Array.from(applyWarp(src, w, h, [control])))
+    const grid = applyWarp(src, w, h, [control])
+    // 测试图是逐像素剧烈变化的伪随机纹理，插值误差会被放大；只要求整体接近
+    let sumDiff = 0
+    for (let i = 0; i < src.length; i++) sumDiff += Math.abs(inPlace[i]! - grid[i]!)
+    expect(sumDiff / src.length).toBeLessThan(3)
   })
 
   it('多步推动后，内容沿路径移动', () => {

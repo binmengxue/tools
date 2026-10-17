@@ -97,10 +97,33 @@ export function applyWarp(src: Uint8ClampedArray, width: number, height: number,
   const rect = controlsBounds(controls, width, height)
   if (!rect) return out
   const px = new Float32Array(4)
+  // 位移场很平滑：先在步长 GRID 的网格上计算，再双线性插值，计算量约为逐像素的 1/16
+  const GRID = 4
+  const gw = Math.ceil(rect.width / GRID) + 2
+  const gh = Math.ceil(rect.height / GRID) + 2
+  const gx = new Float32Array(gw * gh)
+  const gy = new Float32Array(gw * gh)
+  for (let j = 0; j < gh; j++) {
+    for (let i = 0; i < gw; i++) {
+      const d = displacementAt(rect.x + i * GRID + 0.5, rect.y + j * GRID + 0.5, controls)
+      gx[j * gw + i] = d.x
+      gy[j * gw + i] = d.y
+    }
+  }
   for (let y = rect.y; y < rect.y + rect.height; y++) {
+    const fy = (y - rect.y) / GRID
+    const j0 = Math.floor(fy)
+    const ty = fy - j0
     for (let x = rect.x; x < rect.x + rect.width; x++) {
-      const d = displacementAt(x + 0.5, y + 0.5, controls)
-      if (d.x === 0 && d.y === 0) continue
+      const fx = (x - rect.x) / GRID
+      const i0 = Math.floor(fx)
+      const tx = fx - i0
+      const a = j0 * gw + i0
+      const b = a + gw
+      const dx = (gx[a]! * (1 - tx) + gx[a + 1]! * tx) * (1 - ty) + (gx[b]! * (1 - tx) + gx[b + 1]! * tx) * ty
+      const dy = (gy[a]! * (1 - tx) + gy[a + 1]! * tx) * (1 - ty) + (gy[b]! * (1 - tx) + gy[b + 1]! * tx) * ty
+      const d = { x: dx, y: dy }
+      if (Math.abs(d.x) < 1e-3 && Math.abs(d.y) < 1e-3) continue
       // 反向映射：此处的内容来自「往回推」的位置
       sample(src, width, height, x - d.x, y - d.y, px)
       const i = (y * width + x) * 4

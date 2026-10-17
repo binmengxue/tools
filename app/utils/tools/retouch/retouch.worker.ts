@@ -2,7 +2,7 @@
  * 人像美颜的后台计算线程：持有原图、每张脸的遮罩和手动操作记录，收到请求后计算结果并传回。
  * 放在 Worker 里，拖动滑杆、涂抹时页面不会卡顿。
  */
-import { prepareFace, renderRetouch, ZERO_PARAMS } from './engine'
+import { finishRender, prepareFace, renderSkin, skinKey, ZERO_PARAMS } from './engine'
 import type { FacePrep, RetouchParams } from './engine'
 import { active, canRedo, canUndo, createHistory, push, redo, replaceLast, undo } from './history'
 import type { History } from './history'
@@ -39,6 +39,11 @@ let history: History<ManualOp> = createHistory()
 // 贴好补丁的底图缓存：记录用到的补丁，前缀不变时只追加新的补丁
 let patched: Uint8ClampedArray | null = null
 let patchedOps: ManualOp[] = []
+/** 底图内容每变化一次加 1，用于判断皮肤阶段缓存是否还能用 */
+let patchedVersion = 0
+
+// 皮肤阶段的缓存：只拖动瘦脸、去双下巴，或只做推拉、磨皮画笔时不必重算
+let skinCache: { key: string, version: number, rgba: Uint8ClampedArray, spots: number } | null = null
 
 const post = (message: WorkerResponse, transfer: Transferable[] = []) =>
   (self as unknown as Worker).postMessage(message, transfer)
@@ -52,8 +57,13 @@ function patchedBase(): Uint8ClampedArray {
   if (!reusable) {
     patched = original!.slice()
     patchedOps = []
+    patchedVersion++
   }
-  applyPatches(patched!, width, patches.slice(patchedOps.length))
+  const added = patches.slice(patchedOps.length)
+  if (added.length) {
+    applyPatches(patched!, width, added)
+    patchedVersion++
+  }
   patchedOps = patches
   return patched!
 }
@@ -61,7 +71,14 @@ function patchedBase(): Uint8ClampedArray {
 function render() {
   const start = performance.now()
   const ops = active(history)
-  const { rgba, spots } = renderRetouch(patchedBase(), width, height, preps, params, ops)
+  const base = patchedBase()
+  const key = skinKey(params)
+  if (!skinCache || skinCache.key !== key || skinCache.version !== patchedVersion) {
+    const skin = renderSkin(base, width, preps, params)
+    skinCache = { key, version: patchedVersion, rgba: skin.rgba, spots: skin.spots }
+  }
+  const rgba = finishRender(skinCache.rgba, base, width, height, preps, params, ops)
+  const spots = skinCache.spots
   post({
     type: 'result',
     rgba,
@@ -102,6 +119,7 @@ self.addEventListener('message', (event: MessageEvent<WorkerRequest>) => {
         original = msg.rgba
         patched = null
         patchedOps = []
+        skinCache = null
         history = createHistory()
         params = { ...ZERO_PARAMS }
         preps = msg.faces.map(face => prepareFace(msg.rgba, width, height, face))

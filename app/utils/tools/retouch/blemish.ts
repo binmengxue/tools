@@ -3,7 +3,7 @@
  * 检测：在皮肤遮罩内找比周围明显更暗的小块（连通区域），按面积筛选。
  * 修补：归一化卷积——用遮罩外（健康皮肤）的像素按高斯加权填补遮罩内，再羽化融合。
  */
-import { feather, fillCircle, gaussianBlur } from './raster'
+import { cropPlanes, downscale, feather, fillCircle, gaussianBlur, pastePlanes, upscale } from './raster'
 import type { Planes } from './raster'
 
 export interface Spot {
@@ -32,7 +32,16 @@ export interface DetectOptions {
  * 返回的斑点按面积从小到大排序。
  */
 export function detectSpots(lum: Float32Array, skin: Float32Array, width: number, height: number, options: DetectOptions): Spot[] {
-  const base = gaussianBlur(lum, width, height, options.sigma)
+  // 周围亮度是大尺度的平滑量，半径较大时在缩小的图上计算
+  const factor = options.sigma >= 16 ? 4 : options.sigma >= 8 ? 2 : 1
+  let base: Float32Array
+  if (factor > 1) {
+    const small = downscale(lum, width, height, factor)
+    base = upscale(gaussianBlur(small.data, small.width, small.height, options.sigma / factor), small.width, small.height, width, height, factor)
+  }
+  else {
+    base = gaussianBlur(lum, width, height, options.sigma)
+  }
   const candidate = new Uint8Array(lum.length)
   for (let i = 0; i < lum.length; i++) {
     if (skin[i]! >= options.minSkin && base[i]! - lum[i]! > options.threshold) candidate[i] = 1
@@ -106,6 +115,28 @@ export function healMask(planes: Planes, mask: Float32Array, sigma: number): voi
       const fill = blurred[i]! / w
       channel[i] = channel[i]! + (fill - channel[i]!) * m
     }
+  }
+}
+
+/**
+ * 逐个修补斑点：每个斑点只在自己附近的小窗口内计算（比整块区域做一次修补快得多）。
+ * 直接修改 planes。
+ */
+export function healSpots(planes: Planes, spots: Spot[], sigma: number, grow = 1.6): void {
+  for (const s of spots) {
+    const r = Math.max(1.5, s.radius * grow + 1)
+    const margin = r + sigma * 4
+    const x0 = Math.max(0, Math.floor(s.x - margin))
+    const y0 = Math.max(0, Math.floor(s.y - margin))
+    const x1 = Math.min(planes.width, Math.ceil(s.x + margin))
+    const y1 = Math.min(planes.height, Math.ceil(s.y + margin))
+    const rect = { x: x0, y: y0, width: x1 - x0, height: y1 - y0 }
+    if (rect.width < 3 || rect.height < 3) continue
+    const part = cropPlanes(planes, rect)
+    const mask = new Float32Array(rect.width * rect.height)
+    fillCircle(mask, rect.width, rect.height, s.x - x0, s.y - y0, r, 1, 'max', 0.6)
+    healMask(part, mask, sigma)
+    pastePlanes(planes, rect, part)
   }
 }
 

@@ -3,7 +3,7 @@
  * - prepareFace：每张照片识别后执行一次，计算每张脸的处理区域、皮肤遮罩、去皱遮罩
  * - retouchFace：每次调整滑杆时执行，只处理人脸附近的局部区域
  */
-import { detectSpots, healMask, spotsToMask } from './blemish'
+import { detectSpots, healSpots } from './blemish'
 import { skinMap, liftShadows, smoothSkin } from './filters'
 import {
   expandRect,
@@ -22,7 +22,9 @@ import {
   EXCLUDED_REGIONS,
   FACE_OVAL,
   faceWidth,
+  LEFT_UNDER_EYE,
   nasolabialBand,
+  RIGHT_UNDER_EYE,
   toPolygon,
   WRINKLE_REGIONS,
 } from './regions'
@@ -44,7 +46,7 @@ export interface RetouchParams {
 export const ZERO_PARAMS: RetouchParams = { smooth: 0, blemish: 0, wrinkle: 0, slim: 0, chin: 0 }
 
 /** 「一键美颜」：自然、不过度的默认组合 */
-export const BEAUTY_PRESET: RetouchParams = { smooth: 55, blemish: 60, wrinkle: 45, slim: 25, chin: 30 }
+export const BEAUTY_PRESET: RetouchParams = { smooth: 45, blemish: 60, wrinkle: 50, slim: 25, chin: 30 }
 
 export interface FacePrep {
   /** 处理区域（图片坐标） */
@@ -53,6 +55,10 @@ export interface FacePrep {
   skin: Float32Array
   /** 去皱遮罩（处理区域大小） */
   wrinkle: Float32Array
+  /** 眼下（眼袋、黑眼圈）遮罩（处理区域大小） */
+  underEye: Float32Array
+  /** 祛斑检测范围：皮肤遮罩，并远离眼、眉、唇，避免把睫毛、眉毛当成斑点 */
+  blemishZone: Float32Array
   /** 下巴下方阴影区域（处理区域大小），去双下巴时提亮 */
   chin: Float32Array
   /** 脸宽（像素），各种半径以它为尺度 */
@@ -95,6 +101,11 @@ export function prepareFace(rgba: Uint8ClampedArray, width: number, height: numb
   }
   const skinSoft = feather(skin, w, h, fw * 0.02)
 
+  // 祛斑范围：在皮肤的基础上，把眼、眉、唇周围更大一圈也排除（睫毛、眉毛、唇纹都是「暗的小块」）
+  const farHoles = gaussianBlur(holes, w, h, fw * 0.035)
+  const blemishZone = new Float32Array(w * h)
+  for (let i = 0; i < blemishZone.length; i++) blemishZone[i] = skin[i]! * (1 - Math.min(1, farHoles[i]! * 6))
+
   // 去皱区域：眼下、额头、法令纹、鱼尾纹
   const wrinkle = new Float32Array(w * h)
   for (const region of WRINKLE_REGIONS) fillPolygon(wrinkle, w, h, toPolygon(landmarks, region, width, height), 1, 'max', offset)
@@ -105,6 +116,12 @@ export function prepareFace(rgba: Uint8ClampedArray, width: number, height: numb
   }
   const wrinkleSoft = feather(wrinkle, w, h, fw * 0.03)
   for (let i = 0; i < wrinkleSoft.length; i++) wrinkleSoft[i] = wrinkleSoft[i]! * Math.min(1, skinSoft[i]! * 1.5)
+
+  // 眼下：眼袋、黑眼圈（成片的阴影，单独用大尺度提亮）
+  const underEye = new Float32Array(w * h)
+  for (const region of [LEFT_UNDER_EYE, RIGHT_UNDER_EYE]) fillPolygon(underEye, w, h, toPolygon(landmarks, region, width, height), 1, 'max', offset)
+  const underEyeSoft = feather(underEye, w, h, fw * 0.025)
+  for (let i = 0; i < underEyeSoft.length; i++) underEyeSoft[i] = underEyeSoft[i]! * Math.min(1, skinSoft[i]! * 1.5)
 
   // 下巴下方：双下巴的褶皱阴影所在，椭圆区域 × 肤色
   const points = toPixels(landmarks, width, height)
@@ -121,7 +138,7 @@ export function prepareFace(rgba: Uint8ClampedArray, width: number, height: numb
     }
   }
 
-  return { rect, skin: skinSoft, wrinkle: wrinkleSoft, chin, faceWidth: fw, points }
+  return { rect, skin: skinSoft, wrinkle: wrinkleSoft, underEye: underEyeSoft, blemishZone, chin, faceWidth: fw, points }
 }
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v))
@@ -137,21 +154,24 @@ export function retouchSkin(planes: Planes, prep: FacePrep, params: RetouchParam
 
   if (params.blemish > 0) {
     const s = params.blemish / 100
-    const spots = detectSpots(luminance(planes), prep.skin, w, h, {
-      threshold: 26 - 16 * s,
+    // 毛孔也是「暗的小点」，但明显更小、更浅；面积下限和深度阈值都按脸的大小设置，只处理痘印、斑点、痣
+    const spots = detectSpots(luminance(planes), prep.blemishZone, w, h, {
+      threshold: 32 - 18 * s,
       sigma: Math.max(3, fw * 0.03),
-      minArea: 2,
+      minArea: Math.max(4, Math.PI * (fw * 0.0045) ** 2),
       maxArea: Math.PI * (fw * 0.025) ** 2,
       minSkin: 0.6,
     })
     spotCount = spots.length
-    if (spots.length) healMask(planes, spotsToMask(spots, w, h), Math.max(2, fw * 0.012))
+    if (spots.length) healSpots(planes, spots, Math.max(2, fw * 0.012))
   }
 
   if (params.wrinkle > 0) {
     const s = params.wrinkle / 100
     smoothSkin(planes, prep.wrinkle, { amount: s, radius: clamp(Math.round(fw * 0.025), 2, 30), eps: 40 * 40, texture: 0.15 })
     liftShadows(planes, prep.wrinkle, s * 0.7, Math.max(2, fw * 0.02))
+    // 黑眼圈、眼袋：以大范围的周围亮度为参考提亮
+    liftShadows(planes, prep.underEye, s * 0.9, Math.max(4, fw * 0.07))
   }
 
   if (params.chin > 0) {
@@ -165,7 +185,7 @@ export function retouchSkin(planes: Planes, prep: FacePrep, params: RetouchParam
       amount: s,
       radius: clamp(Math.round(fw * 0.018), 2, 24),
       eps: (12 + 28 * s) ** 2,
-      texture: 0.45 - 0.25 * s,
+      texture: 0.55 - 0.25 * s,
     })
   }
 
@@ -196,7 +216,18 @@ export function renderRetouch(
   params: RetouchParams,
   manualOps: ManualOp[] = [],
 ): { rgba: Uint8ClampedArray, spots: number } {
-  let out: Uint8ClampedArray = base.slice()
+  const skin = renderSkin(base, width, preps, params)
+  return { rgba: finishRender(skin.rgba, base, width, height, preps, params, manualOps), spots: skin.spots }
+}
+
+/** 影响皮肤阶段结果的参数（瘦脸、去双下巴的变形不在其中，拖动它们时皮肤阶段可以复用缓存） */
+export function skinKey(params: RetouchParams): string {
+  return `${params.smooth}|${params.blemish}|${params.wrinkle}|${params.chin}`
+}
+
+/** 皮肤阶段：逐张脸祛斑、去皱、提亮下巴阴影、磨皮（返回新数组，不修改 base） */
+export function renderSkin(base: Uint8ClampedArray, width: number, preps: FacePrep[], params: RetouchParams): { rgba: Uint8ClampedArray, spots: number } {
+  const out = base.slice()
   let spots = 0
   for (const prep of preps) {
     if (prep.rect.width === 0 || prep.rect.height === 0) continue
@@ -204,10 +235,24 @@ export function renderRetouch(
     spots += retouchSkin(planes, prep, params)
     writePlanes(out, width, prep.rect, planes)
   }
+  return { rgba: out, spots }
+}
+
+/** 收尾阶段：磨皮 / 保护画笔、自动变形、推拉画笔（skin 为皮肤阶段结果，不会被修改） */
+export function finishRender(
+  skin: Uint8ClampedArray,
+  base: Uint8ClampedArray,
+  width: number,
+  height: number,
+  preps: FacePrep[],
+  params: RetouchParams,
+  manualOps: ManualOp[],
+): Uint8ClampedArray {
+  let out: Uint8ClampedArray = skin.slice()
   applyMaskOps(out, base, width, height, manualOps)
   const controls = faceWarpControls(preps, params)
   if (controls.length) out = applyWarp(out, width, height, controls)
   const pushes = pushSequence(manualOps)
   if (pushes.length) applyWarpSequence(out, width, height, pushes)
-  return { rgba: out, spots }
+  return out
 }

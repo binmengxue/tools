@@ -223,6 +223,109 @@ export function writePlanes(rgba: Uint8ClampedArray, imageWidth: number, rect: R
   }
 }
 
+/** 遮罩中大于阈值部分的外接矩形（局部坐标）；没有时返回 null */
+export function maskBounds(mask: Float32Array, width: number, height: number, threshold = 0.001): Rect | null {
+  let minX = width
+  let minY = height
+  let maxX = -1
+  let maxY = -1
+  for (let y = 0; y < height; y++) {
+    const row = y * width
+    for (let x = 0; x < width; x++) {
+      if (mask[row + x]! > threshold) {
+        if (x < minX) minX = x
+        if (x > maxX) maxX = x
+        if (y < minY) minY = y
+        if (y > maxY) maxY = y
+      }
+    }
+  }
+  return maxX < 0 ? null : { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 }
+}
+
+/** 取出局部图像中的一个子矩形（复制） */
+export function cropPlanes(planes: Planes, rect: Rect): Planes {
+  const { width: w } = planes
+  const out = {
+    width: rect.width,
+    height: rect.height,
+    r: new Float32Array(rect.width * rect.height),
+    g: new Float32Array(rect.width * rect.height),
+    b: new Float32Array(rect.width * rect.height),
+  }
+  for (let y = 0; y < rect.height; y++) {
+    const from = (rect.y + y) * w + rect.x
+    out.r.set(planes.r.subarray(from, from + rect.width), y * rect.width)
+    out.g.set(planes.g.subarray(from, from + rect.width), y * rect.width)
+    out.b.set(planes.b.subarray(from, from + rect.width), y * rect.width)
+  }
+  return out
+}
+
+/** 把子图写回局部图像 */
+export function pastePlanes(planes: Planes, rect: Rect, part: Planes): void {
+  for (let y = 0; y < rect.height; y++) {
+    const to = (rect.y + y) * planes.width + rect.x
+    planes.r.set(part.r.subarray(y * rect.width, (y + 1) * rect.width), to)
+    planes.g.set(part.g.subarray(y * rect.width, (y + 1) * rect.width), to)
+    planes.b.set(part.b.subarray(y * rect.width, (y + 1) * rect.width), to)
+  }
+}
+
+/** 取出遮罩的子矩形（复制） */
+export function cropMask(mask: Float32Array, width: number, rect: Rect): Float32Array {
+  const out = new Float32Array(rect.width * rect.height)
+  for (let y = 0; y < rect.height; y++) {
+    const from = (rect.y + y) * width + rect.x
+    out.set(mask.subarray(from, from + rect.width), y * rect.width)
+  }
+  return out
+}
+
+/** 缩小为 1/factor（块平均） */
+export function downscale(src: Float32Array, width: number, height: number, factor: number): { data: Float32Array, width: number, height: number } {
+  const w = Math.max(1, Math.ceil(width / factor))
+  const h = Math.max(1, Math.ceil(height / factor))
+  const data = new Float32Array(w * h)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let sum = 0
+      let n = 0
+      const y1 = Math.min(height, (y + 1) * factor)
+      const x1 = Math.min(width, (x + 1) * factor)
+      for (let sy = y * factor; sy < y1; sy++) {
+        for (let sx = x * factor; sx < x1; sx++) {
+          sum += src[sy * width + sx]!
+          n++
+        }
+      }
+      data[y * w + x] = sum / n
+    }
+  }
+  return { data, width: w, height: h }
+}
+
+/** 双线性放大到指定尺寸（与 downscale 对应，按块中心对齐） */
+export function upscale(src: Float32Array, srcWidth: number, srcHeight: number, width: number, height: number, factor: number): Float32Array {
+  const out = new Float32Array(width * height)
+  for (let y = 0; y < height; y++) {
+    const fy = Math.min(srcHeight - 1, Math.max(0, (y + 0.5) / factor - 0.5))
+    const y0 = Math.floor(fy)
+    const y1 = Math.min(srcHeight - 1, y0 + 1)
+    const ty = fy - y0
+    for (let x = 0; x < width; x++) {
+      const fx = Math.min(srcWidth - 1, Math.max(0, (x + 0.5) / factor - 0.5))
+      const x0 = Math.floor(fx)
+      const x1 = Math.min(srcWidth - 1, x0 + 1)
+      const tx = fx - x0
+      const top = src[y0 * srcWidth + x0]! + (src[y0 * srcWidth + x1]! - src[y0 * srcWidth + x0]!) * tx
+      const bottom = src[y1 * srcWidth + x0]! + (src[y1 * srcWidth + x1]! - src[y1 * srcWidth + x0]!) * tx
+      out[y * width + x] = top + (bottom - top) * ty
+    }
+  }
+  return out
+}
+
 /** 亮度（Rec.601） */
 export function luminance(planes: Planes): Float32Array {
   const { r, g, b } = planes

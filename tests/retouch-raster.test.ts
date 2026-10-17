@@ -207,3 +207,29 @@ describe('斑点', () => {
     expect(p.r[2 * w + 2]).toBe(180)
   })
 })
+
+describe('加速版本', () => {
+  it('快速引导滤波与原版结果接近', async () => {
+    const { fastGuidedFilter } = await import('../app/utils/tools/retouch/filters')
+    const w = 120
+    const h = 90
+    const src = new Float32Array(w * h)
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) src[y * w + x] = 150 + 40 * Math.sin(x / 9) + ((x * 7 + y * 13) % 9) - 4
+    const exact = guidedFilter(src, w, h, 8, 400)
+    const fast = fastGuidedFilter(src, w, h, 8, 400, 2)
+    let diff = 0
+    for (let i = 0; i < src.length; i++) diff += Math.abs(exact[i]! - fast[i]!)
+    expect(diff / src.length).toBeLessThan(2)
+  })
+
+  it('逐个修补斑点：斑点被修补，远处不变', async () => {
+    const { healSpots } = await import('../app/utils/tools/retouch/blemish')
+    const w = 80
+    const p = solid(w, w, 180)
+    for (let y = 0; y < w; y++) for (let x = 0; x < w; x++) if (Math.hypot(x - 20, y - 20) <= 3 || Math.hypot(x - 60, y - 50) <= 3) p.r[y * w + x] = 110
+    healSpots(p, [{ x: 20.5, y: 20.5, radius: 3, area: 28 }, { x: 60.5, y: 50.5, radius: 3, area: 28 }], 4)
+    expect(Math.abs(p.r[20 * w + 20]! - 180)).toBeLessThan(8)
+    expect(Math.abs(p.r[50 * w + 60]! - 180)).toBeLessThan(8)
+    expect(p.r[78 * w + 2]).toBe(180)
+  })
+})
