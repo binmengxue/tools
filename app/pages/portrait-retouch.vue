@@ -84,7 +84,15 @@ const brushRadius = computed({
     brushSizes[activeBrush.value ?? 'heal'] = value
   },
 })
-const zoom = ref<'fit' | '1' | '2'>('fit')
+const zoom = ref<'fit' | number>('fit')
+/** 缩放按钮：用滚轮缩放到其他倍数时都不选中 */
+const zoomPreset = computed({
+  get: () => (zoom.value === 'fit' ? 'fit' : zoom.value === 1 ? '1' : zoom.value === 2 ? '2' : ''),
+  set: (value: string) => {
+    zoom.value = value === 'fit' ? 'fit' : Number(value)
+  },
+})
+const zoomLabel = computed(() => (zoom.value === 'fit' ? '' : `${Math.round(zoom.value * 100)}%`))
 let strokeId = 0
 
 const retouch = useRetouchWorker((rgba) => {
@@ -318,7 +326,7 @@ function reset() {
   Object.assign(params, ZERO_PARAMS)
 }
 
-const zoomOptions: { value: 'fit' | '1' | '2', label: string }[] = [
+const zoomOptions: { value: string, label: string }[] = [
   { value: 'fit', label: '适应' },
   { value: '1', label: '100%' },
   { value: '2', label: '200%' },
@@ -327,7 +335,7 @@ const zoomOptions: { value: 'fit' | '1' | '2', label: string }[] = [
 const tips = [
   '首次使用需要下载约 17 MB 的 AI 模型，之后浏览器会缓存。识别到人脸后自动应用「一键美颜」，可用滑杆分别调整。',
   '滑杆处理不到的地方用画笔：「修复」去痘印斑点，「消除」去路人杂物，「磨皮」补涂脖子，「保护」避开头发饰品，「推拉」手动调整轮廓，「收下巴」涂在双下巴上自动收紧。支持 Ctrl+Z 撤销。',
-  '修细节时可以放大到 100% 或 200%；按住「对比」查看原图。',
+  '在图片上滚动鼠标滚轮放大缩小；没选画笔时直接拖动图片，选了画笔时按住空格（或鼠标中键）拖动。按住「对比」查看原图。',
   '照片只在你的浏览器里处理，不会上传到任何服务器。正脸、光线均匀、人脸较大的照片效果最好。',
 ]
 </script>
@@ -351,11 +359,11 @@ const tips = [
       <div class="min-w-0 space-y-2">
         <RetouchCanvas
           ref="canvas"
+          v-model:zoom="zoom"
           :width="work.width"
           :height="work.height"
           :tool="workerReady ? activeBrush : null"
           :radius="brushRadius"
-          :zoom="zoom === 'fit' ? 'fit' : Number(zoom)"
           @stroke-move="onStrokeMove"
           @stroke-end="onStrokeEnd"
         >
@@ -375,11 +383,17 @@ const tips = [
           </span>
         </RetouchCanvas>
         <div class="flex flex-wrap items-center justify-between gap-2">
-          <SegmentedControl
-            v-model="zoom"
-            :options="zoomOptions"
-            group-label="缩放"
-          />
+          <div class="flex items-center gap-2">
+            <SegmentedControl
+              v-model="zoomPreset"
+              :options="zoomOptions"
+              group-label="缩放"
+            />
+            <span
+              v-if="zoomLabel"
+              class="text-xs text-muted tabular-nums"
+            >{{ zoomLabel }}</span>
+          </div>
           <div class="flex gap-1">
             <button
               type="button"
