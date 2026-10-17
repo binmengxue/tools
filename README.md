@@ -19,11 +19,20 @@
 | 文本工具 | 字数统计与文本清洗 | 统计字符、单词和段落数，支持去除空行、首尾空格、重复空格 |
 | 图片工具 | 二维码生成 | 输入网址或文字生成二维码，支持下载 PNG |
 | 图片工具 | 图片压缩 | 上传图片，调整压缩质量，对比压缩前后大小并下载 |
+| 图片工具 | 人像美颜 | AI 识别人脸后一键磨皮、祛斑、去皱、瘦脸、去双下巴；画笔修复、消除杂物、补涂磨皮、保护、推拉液化，可撤销 |
 | 生活工具 | 时区转换 | 世界各地时间对照，换算会议时间，自动处理夏令时 |
 | 生活工具 | 货币转换 | 160 多种货币汇率换算，构建时快照 + 打开页面时实时刷新 |
 | 生活工具 | 单位换算 | 长度、面积、体积、重量、温度、速度、数据大小、网速，含市制单位 |
 
-所有工具都在浏览器本地运行：JSON 解析器为手写实现（中文报错 + 行列定位 + 大数字不丢精度），文本对比基于 jsdiff，二维码基于 qrcode，其余工具只用原生 Intl 与 Canvas。
+所有工具都在浏览器本地运行：JSON 解析器为手写实现（中文报错 + 行列定位 + 大数字不丢精度），文本对比基于 jsdiff，二维码基于 qrcode，人像美颜的人脸识别基于 MediaPipe Face Landmarker，其余工具只用原生 Intl 与 Canvas。
+
+人像美颜的实现：
+- **人脸识别**：MediaPipe Face Landmarker（478 个关键点）。运行时 wasm（约 13.5 MB）由 `scripts/copy-mediapipe.mjs` 在 `pnpm dev` / `pnpm generate` 前从 node_modules 复制到 `public/models/`（不提交）；模型 `public/models/face_landmarker-v1.task`（3.6 MB）提交在仓库里。两者都自托管，国内可用，打开该工具时才按需下载。
+- **图像处理**：全部在 Web Worker 里用 CPU 完成，代码在 `app/utils/tools/retouch/`：
+  - 磨皮：引导滤波
+  - 祛斑：暗点检测 + 归一化卷积修补
+  - 瘦脸、去双下巴、推拉：局部「向前推」变形
+  - 消除：PatchMatch 样本块修补，不需要额外模型
 
 货币转换是唯一需要外部数据的工具：`pnpm generate`（含 `.\deploy.ps1`）时由 `server/routes/rates.json.ts` 从 [ExchangeRate-API](https://www.exchangerate-api.com) 获取汇率并生成静态文件 `/rates.json`，获取失败时使用仓库里的 `server/data/rates-fallback.json`；页面打开后浏览器会再请求一次最新汇率，只请求公开数据，不发送用户输入。
 
@@ -46,17 +55,21 @@ app/
     tools.ts          # 工具注册表（首页卡片、搜索、预渲染路由都由它驱动）
     site.ts           # 站点名称、标语、域名、ICP 备案号
   components/
+    retouch/          # RetouchCanvas（人像美颜画布：缩放、画笔、预览）
     layout/           # AppHeader、AppFooter
     tool/             # ToolCard、ToolLayout
     common/           # EditorPane、SegmentedControl、PaneButton、FileDrop、CopyButton、AppToast
-  composables/        # useTheme、useClipboard、useToast
+  composables/        # useTheme、useClipboard、useToast、useFaceLandmarker、useRetouchWorker
   utils/              # 纯函数逻辑（首页搜索分组等），配 Vitest 单测
     tools/            # 各工具的核心逻辑（需显式 import，嵌套目录不会自动导入）
+      retouch/        # 人像美颜：人脸区域、滤镜、斑点、变形、PatchMatch 消除、撤销记录、后台线程
   pages/              # index.vue 首页、about.vue 关于页 + 每个工具一个 <tool-id>.vue
   error.vue           # 404 / 错误页
 server/
   routes/rates.json.ts      # 构建时生成汇率快照 /rates.json
   data/rates-fallback.json  # 构建时获取汇率失败用的兜底快照
+public/models/        # 人像美颜的 AI 模型（运行时 wasm 构建前自动复制）
+scripts/copy-mediapipe.mjs  # 复制 MediaPipe 运行时到 public/models/
 tests/                # Vitest 单元测试
 nginx/                # nginx 站点配置示例
 deploy.ps1            # Windows 一键发布脚本（检查 → 打包 → 上传）
