@@ -62,11 +62,21 @@ const brushes: { id: ManualTool, label: string, icon: string, hint: string }[] =
   { id: 'erase', label: '消除', icon: 'lucide:eraser', hint: '涂抹路人、杂物、电线等，松手后用周围的背景填补' },
   { id: 'smooth', label: '磨皮', icon: 'lucide:brush', hint: '涂抹脖子、手臂等自动识别不到的皮肤' },
   { id: 'protect', label: '保护', icon: 'lucide:shield', hint: '涂抹不想被磨皮的地方，如头发、饰品、衣服花纹' },
-  { id: 'push', label: '推拉', icon: 'lucide:move', hint: '按住拖动推移轮廓，手动瘦脸、收下巴' },
+  { id: 'push', label: '推拉', icon: 'lucide:move', hint: '把圆圈放在轮廓边缘（如下颌线），按住往里拖动；笔刷要比要推的部位大一些' },
 ]
 
 const activeBrush = ref<ManualTool | null>(null)
-const brushRadius = ref(20)
+
+/** 各画笔默认大小（占图片短边的比例）：推拉需要大笔刷才能推动轮廓，修复需要小笔刷 */
+const BRUSH_SIZE_RATIO: Record<ManualTool, number> = { heal: 0.02, erase: 0.03, smooth: 0.05, protect: 0.04, push: 0.08 }
+/** 每种画笔分别记住自己的大小 */
+const brushSizes = reactive<Record<ManualTool, number>>({ heal: 20, erase: 30, smooth: 50, protect: 40, push: 80 })
+const brushRadius = computed({
+  get: () => brushSizes[activeBrush.value ?? 'heal'],
+  set: (value: number) => {
+    brushSizes[activeBrush.value ?? 'heal'] = value
+  },
+})
 const zoom = ref<'fit' | '1' | '2'>('fit')
 let strokeId = 0
 
@@ -118,7 +128,8 @@ async function onFiles(files: File[]) {
   Object.assign(params, ZERO_PARAMS)
   activeBrush.value = null
   zoom.value = 'fit'
-  brushRadius.value = Math.max(4, Math.round(Math.min(size.width, size.height) * 0.02))
+  const short = Math.min(size.width, size.height)
+  for (const id of Object.keys(BRUSH_SIZE_RATIO) as ManualTool[]) brushSizes[id] = Math.max(4, Math.round(short * BRUSH_SIZE_RATIO[id]))
   work.value = { name: file.name || 'photo', ...size, original }
   result.value = null
   faces.value = []

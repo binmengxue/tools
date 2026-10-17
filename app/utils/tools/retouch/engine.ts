@@ -59,8 +59,6 @@ export interface FacePrep {
   underEye: Float32Array
   /** 祛斑检测范围：皮肤遮罩，并远离眼、眉、唇，避免把睫毛、眉毛当成斑点 */
   blemishZone: Float32Array
-  /** 下巴下方阴影区域（处理区域大小），去双下巴时提亮 */
-  chin: Float32Array
   /** 脸宽（像素），各种半径以它为尺度 */
   faceWidth: number
   /** 关键点像素坐标 */
@@ -123,29 +121,15 @@ export function prepareFace(rgba: Uint8ClampedArray, width: number, height: numb
   const underEyeSoft = feather(underEye, w, h, fw * 0.025)
   for (let i = 0; i < underEyeSoft.length; i++) underEyeSoft[i] = underEyeSoft[i]! * Math.min(1, skinSoft[i]! * 1.5)
 
-  // 下巴下方：双下巴的褶皱阴影所在，椭圆区域 × 肤色
-  const points = toPixels(landmarks, width, height)
-  const chinPoint = points[152]!
-  const chin = new Float32Array(w * h)
-  const cx = chinPoint.x - offset.x
-  const cy = chinPoint.y + fw * 0.1 - offset.y
-  const rx = fw * 0.28
-  const ry = fw * 0.12
-  for (let y = Math.max(0, Math.floor(cy - ry)); y < Math.min(h, Math.ceil(cy + ry)); y++) {
-    for (let x = Math.max(0, Math.floor(cx - rx)); x < Math.min(w, Math.ceil(cx + rx)); x++) {
-      const d = ((x + 0.5 - cx) / rx) ** 2 + ((y + 0.5 - cy) / ry) ** 2
-      if (d < 1) chin[y * w + x] = (1 - d) * color[y * w + x]!
-    }
-  }
-
-  return { rect, skin: skinSoft, wrinkle: wrinkleSoft, underEye: underEyeSoft, blemishZone, chin, faceWidth: fw, points }
+  return { rect, skin: skinSoft, wrinkle: wrinkleSoft, underEye: underEyeSoft, blemishZone, faceWidth: fw, points: toPixels(landmarks, width, height) }
 }
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v))
 
 /**
  * 对一张脸做皮肤类处理（直接修改 planes，planes 为该脸处理区域的局部图像）。
- * 顺序：祛斑 → 去皱 → 下巴阴影 → 磨皮。返回修补的斑点数。
+ * 顺序：祛斑 → 去皱 → 磨皮。返回修补的斑点数。
+ * 去双下巴只做变形，不提亮阴影：下巴下方常有头发、颈部阴影，提亮会把发丝抹掉、出现亮斑。
  */
 export function retouchSkin(planes: Planes, prep: FacePrep, params: RetouchParams): number {
   const { width: w, height: h } = planes
@@ -172,11 +156,6 @@ export function retouchSkin(planes: Planes, prep: FacePrep, params: RetouchParam
     liftShadows(planes, prep.wrinkle, s * 0.7, Math.max(2, fw * 0.02))
     // 黑眼圈、眼袋：以大范围的周围亮度为参考提亮
     liftShadows(planes, prep.underEye, s * 0.9, Math.max(4, fw * 0.07))
-  }
-
-  if (params.chin > 0) {
-    // 双下巴的褶皱阴影：只提亮不压暗
-    liftShadows(planes, prep.chin, (params.chin / 100) * 0.6, Math.max(3, fw * 0.04))
   }
 
   if (params.smooth > 0) {
@@ -220,9 +199,9 @@ export function renderRetouch(
   return { rgba: finishRender(skin.rgba, base, width, height, preps, params, manualOps), spots: skin.spots }
 }
 
-/** 影响皮肤阶段结果的参数（瘦脸、去双下巴的变形不在其中，拖动它们时皮肤阶段可以复用缓存） */
+/** 影响皮肤阶段结果的参数（瘦脸、去双下巴只是变形，不在其中，拖动它们时皮肤阶段可以复用缓存） */
 export function skinKey(params: RetouchParams): string {
-  return `${params.smooth}|${params.blemish}|${params.wrinkle}|${params.chin}`
+  return `${params.smooth}|${params.blemish}|${params.wrinkle}`
 }
 
 /** 皮肤阶段：逐张脸祛斑、去皱、提亮下巴阴影、磨皮（返回新数组，不修改 base） */

@@ -15,6 +15,11 @@ export interface WarpControl {
   dx: number
   dy: number
   radius: number
+  /**
+   * 推动方向「背后」的影响范围（可选，默认等于 radius）。
+   * 推动时前方被压缩、背后被拉伸；把背后的范围设大，拉伸被分散到更大的区域，就不会出现拉丝、拖影。
+   */
+  backRadius?: number
 }
 
 /** 衰减：中心为 1，半径处为 0 */
@@ -32,16 +37,38 @@ export function controlsBounds(controls: WarpControl[], width: number, height: n
   let x1 = -Infinity
   let y1 = -Infinity
   for (const c of controls) {
-    x0 = Math.min(x0, c.x - c.radius)
-    y0 = Math.min(y0, c.y - c.radius)
-    x1 = Math.max(x1, c.x + c.radius)
-    y1 = Math.max(y1, c.y + c.radius)
+    const r = Math.max(c.radius, c.backRadius ?? c.radius)
+    x0 = Math.min(x0, c.x - r)
+    y0 = Math.min(y0, c.y - r)
+    x1 = Math.max(x1, c.x + r)
+    y1 = Math.max(y1, c.y + r)
   }
   const x = Math.max(0, Math.floor(x0))
   const y = Math.max(0, Math.floor(y0))
   const w = Math.min(width, Math.ceil(x1)) - x
   const h = Math.min(height, Math.ceil(y1)) - y
   return w > 0 && h > 0 ? { x, y, width: w, height: h } : null
+}
+
+/**
+ * 控制点对某一点的影响权重。
+ * 推动方向的前方按圆形半径 radius 衰减；背后按椭圆衰减（沿推动方向的半径为 backRadius），两侧在交界处连续。
+ */
+export function weightAt(x: number, y: number, c: WarpControl): number {
+  const vx = x - c.x
+  const vy = y - c.y
+  const back = c.backRadius
+  const len = Math.hypot(c.dx, c.dy)
+  if (!back || back === c.radius || len === 0) return falloff(Math.hypot(vx, vy), c.radius)
+  const ux = c.dx / len
+  const uy = c.dy / len
+  const along = vx * ux + vy * uy
+  if (along >= 0) return falloff(Math.hypot(vx, vy), c.radius)
+  const perp = -vx * uy + vy * ux
+  const t2 = (along / back) ** 2 + (perp / c.radius) ** 2
+  if (t2 >= 1) return 0
+  const t = 1 - t2
+  return t * t
 }
 
 /**
@@ -52,7 +79,7 @@ export function displacementAt(x: number, y: number, controls: WarpControl[]): P
   let sy = 0
   let total = 0
   for (const c of controls) {
-    const w = falloff(Math.hypot(x - c.x, y - c.y), c.radius)
+    const w = weightAt(x, y, c)
     if (w <= 0) continue
     const limit = c.radius * 0.4
     const len = Math.hypot(c.dx, c.dy)
@@ -197,6 +224,8 @@ export function slimFaceControls(points: Point[], faceWidth: number, amount: num
         dx: toCenter * 0.09 * amount * weights[k]!,
         dy: 0,
         radius: faceWidth * 0.2,
+        // 背后是背景、头发：拉伸分散开
+        backRadius: faceWidth * 0.32,
       })
     })
   }
@@ -209,19 +238,33 @@ export function slimFaceControls(points: Point[], faceWidth: number, amount: num
  */
 export function chinControls(points: Point[], faceWidth: number, amount: number): WarpControl[] {
   if (amount <= 0) return []
-  const chin = points[152]!
-  const below = faceWidth * 0.13
-  const lift = faceWidth * 0.07 * amount
-  const controls: WarpControl[] = [{ x: chin.x, y: chin.y + below, dx: 0, dy: -lift, radius: faceWidth * 0.2 }]
-  for (const index of [148, 377]) {
+  // 以鼻尖为中心，下颌线上每个点的「向外」方向（大致朝下、朝外）
+  const center = points[1]!
+  const controls: WarpControl[] = []
+  LOWER_JAW.forEach((index, k) => {
     const p = points[index]!
+    const vx = p.x - center.x
+    const vy = p.y - center.y
+    const len = Math.hypot(vx, vy) || 1
+    const nx = vx / len
+    const ny = vy / len
+    const weight = LOWER_JAW_WEIGHTS[k]!
+    const push = faceWidth * 0.06 * amount * weight
+    // 控制点放在下颌线外侧（下巴下方的软组织处），把它往下颌线方向收
     controls.push({
-      x: p.x,
-      y: p.y + below * 0.9,
-      dx: (chin.x - p.x) * 0.15 * amount,
-      dy: -lift * 0.8,
-      radius: faceWidth * 0.16,
+      x: p.x + nx * faceWidth * 0.07,
+      y: p.y + ny * faceWidth * 0.07,
+      dx: -nx * push,
+      dy: -ny * push,
+      radius: faceWidth * 0.12,
+      // 背后是脖子：拉伸分散到更长的距离，发丝、颈纹不会被拉成长条
+      backRadius: faceWidth * 0.32,
     })
-  }
+  })
   return controls
 }
+
+/** 下颌线下缘：从右侧下颌角经下巴尖到左侧下颌角 */
+export const LOWER_JAW = [172, 136, 150, 149, 176, 148, 152, 377, 400, 378, 379, 365, 397]
+/** 越靠近下巴尖收得越多（双下巴主要在下巴正下方） */
+const LOWER_JAW_WEIGHTS = [0.25, 0.45, 0.65, 0.85, 1, 1, 1, 1, 1, 0.85, 0.65, 0.45, 0.25]

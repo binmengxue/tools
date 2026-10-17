@@ -9,6 +9,7 @@ import type { History } from './history'
 import { applyPatches, erasePatch, healPatch, pushOp } from './manual'
 import type { ManualOp, ManualTool } from './manual'
 import type { Point } from './regions'
+import { applyWarpSequence } from './warp'
 
 export type WorkerRequest
   = | { type: 'init', width: number, height: number, rgba: Uint8ClampedArray, faces: Point[][] }
@@ -77,7 +78,7 @@ function render() {
     const skin = renderSkin(base, width, preps, params)
     skinCache = { key, version: patchedVersion, rgba: skin.rgba, spots: skin.spots }
   }
-  const rgba = finishRender(skinCache.rgba, base, width, height, preps, params, ops)
+  const rgba = renderWithLivePush(skinCache.rgba, base, ops)
   const spots = skinCache.spots
   post({
     type: 'result',
@@ -87,6 +88,36 @@ function render() {
     canUndo: canUndo(history),
     canRedo: canRedo(history),
   }, [rgba.buffer])
+}
+
+// 推拉画笔拖动中：最后一笔之前的结果不变，缓存起来，每次只重新应用最后一笔，拖动更跟手
+let prefixCache: { skin: Uint8ClampedArray, slim: number, chin: number, ops: ManualOp[], rgba: Uint8ClampedArray } | null = null
+
+function renderWithLivePush(skin: Uint8ClampedArray, base: Uint8ClampedArray, ops: ManualOp[]): Uint8ClampedArray {
+  const last = ops[ops.length - 1]
+  if (!last || last.kind !== 'push') {
+    prefixCache = null
+    return finishRender(skin, base, width, height, preps, params, ops)
+  }
+  const prefixOps = ops.slice(0, -1)
+  const reusable = prefixCache !== null
+    && prefixCache.skin === skin
+    && prefixCache.slim === params.slim
+    && prefixCache.chin === params.chin
+    && prefixCache.ops.length === prefixOps.length
+    && prefixCache.ops.every((op, i) => op === prefixOps[i])
+  if (!reusable) {
+    prefixCache = {
+      skin,
+      slim: params.slim,
+      chin: params.chin,
+      ops: prefixOps,
+      rgba: finishRender(skin, base, width, height, preps, params, prefixOps),
+    }
+  }
+  const out = prefixCache!.rgba.slice()
+  applyWarpSequence(out, width, height, last.controls)
+  return out
 }
 
 /** 处理一笔：修复 / 消除在落笔结束时计算补丁；磨皮、保护、推拉可以在拖动中不断更新同一笔 */
@@ -120,6 +151,7 @@ self.addEventListener('message', (event: MessageEvent<WorkerRequest>) => {
         patched = null
         patchedOps = []
         skinCache = null
+        prefixCache = null
         history = createHistory()
         params = { ...ZERO_PARAMS }
         preps = msg.faces.map(face => prepareFace(msg.rgba, width, height, face))

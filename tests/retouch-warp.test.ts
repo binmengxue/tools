@@ -8,6 +8,7 @@ import {
   falloff,
   JAW_LEFT,
   JAW_RIGHT,
+  LOWER_JAW,
   slimFaceControls,
 } from '../app/utils/tools/retouch/warp'
 
@@ -115,10 +116,53 @@ describe('瘦脸与去双下巴', () => {
     expect(a.y).toBeCloseTo(b.y, 6)
   })
 
-  it('去双下巴：下巴下方向上推', () => {
+  it('去双下巴：控制点在下颌线外侧，向下颌线方向收（向上），左右对称', () => {
     const controls = chinControls(face, 400, 1)
-    expect(controls[0]!.y).toBeGreaterThan(800)
+    expect(controls).toHaveLength(LOWER_JAW.length)
+    // 下巴尖（152）对应的控制点在下巴下方，向上推
+    const chin = controls[LOWER_JAW.indexOf(152)]!
+    expect(chin.y).toBeGreaterThan(800)
+    expect(chin.dy).toBeLessThan(0)
     expect(controls.every(c => c.dy < 0)).toBe(true)
-    expect(displacementAt(500, 852, controls).y).toBeLessThan(0)
+    // 下巴正下方的位移向上
+    expect(displacementAt(500, 830, controls).y).toBeLessThan(-5)
+    // 左右对称
+    const a = displacementAt(440, 820, controls)
+    const b = displacementAt(560, 820, controls)
+    expect(a.x).toBeCloseTo(-b.x, 6)
+    expect(a.y).toBeCloseTo(b.y, 6)
+  })
+})
+
+describe('背后加长的影响范围（分散拉伸）', () => {
+  const c = { x: 100, y: 100, dx: 0, dy: -20, radius: 40, backRadius: 120 }
+
+  it('推动方向前方仍按 radius 衰减，背后影响得更远', async () => {
+    const { weightAt } = await import('../app/utils/tools/retouch/warp')
+    expect(weightAt(100, 60, c)).toBe(0) // 前方 40 处为 0
+    expect(weightAt(100, 150, c)).toBeGreaterThan(0) // 背后 50 处仍有影响
+    expect(weightAt(100, 220, c)).toBe(0) // 背后 120 处为 0
+    expect(weightAt(150, 100, c)).toBe(0) // 侧面仍按 radius
+  })
+
+  it('前后交界处连续', async () => {
+    const { weightAt } = await import('../app/utils/tools/retouch/warp')
+    expect(weightAt(120, 100.001, c)).toBeCloseTo(weightAt(120, 99.999, c), 4)
+  })
+
+  it('背后的拉伸被分散：沿推动方向的位移变化率明显变小', () => {
+    const withBack = [c]
+    const without = [{ ...c, backRadius: undefined }]
+    const maxStretch = (controls: typeof withBack) => {
+      let worst = 0
+      // 位移从中心的 -20 逐渐回到 0，相邻两行的差值就是局部拉伸量
+      for (let y = 101; y < 230; y++) worst = Math.max(worst, displacementAt(100, y + 1, controls).y - displacementAt(100, y, controls).y)
+      return worst
+    }
+    expect(maxStretch(withBack)).toBeLessThan(maxStretch(without) * 0.5)
+  })
+
+  it('影响范围包含背后的距离', () => {
+    expect(controlsBounds([c], 1000, 1000)).toEqual({ x: 0, y: 0, width: 220, height: 220 })
   })
 })

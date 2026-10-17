@@ -71,7 +71,7 @@ export function erasePatch(base: Uint8ClampedArray, width: number, height: numbe
 
 /** 推拉画笔的控制点 */
 export function pushOp(strokeId: number, stroke: Stroke): ManualOp {
-  return { kind: 'push', strokeId, controls: pushControls(stroke, 0.8) }
+  return { kind: 'push', strokeId, controls: pushControls(stroke, 1) }
 }
 
 /** 依次贴上所有补丁（原地修改） */
