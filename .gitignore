@@ -22,3 +22,6 @@ logs
 .env
 .env.*
 !.env.example
+
+# MediaPipe 运行时由 scripts/copy-mediapipe.mjs 从 node_modules 复制，不提交
+public/models/mediapipe-*/

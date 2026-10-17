@@ -100,6 +100,16 @@ export const tools: Tool[] = [
     keywords: ['image', 'compress', '图片', '压缩', 'jpg', 'png', 'webp'],
     path: '/image-compress',
   },
+  {
+    id: 'portrait-retouch',
+    name: '人像美颜',
+    desc: 'AI 磨皮、祛斑、去皱、瘦脸、去双下巴，还能消除杂物',
+    icon: 'lucide:wand-sparkles',
+    color: 'text-rose-600 dark:text-rose-400',
+    category: 'image',
+    keywords: ['美颜', '修图', '磨皮', '祛斑', '去皱', '瘦脸', '双下巴', '消除', '人像', 'p图', 'retouch', 'meiyan'],
+    path: '/portrait-retouch',
+  },
 
   // ===== 生活工具 =====
   {
